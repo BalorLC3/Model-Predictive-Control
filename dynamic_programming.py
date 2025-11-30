@@ -1,10 +1,15 @@
 import casadi as ca
-import numpy as np
+'''
+================================================================================
+A try-to-go file for Dynamic Programming for a generic problem, just to heat
+hands.
+================================================================================
+
+'''
 
 # ==============================================================================
 # 1. PROBLEM DEFINITION (Identical)
 # ==============================================================================
-print("--- 1. Defining the Optimization Problem ---")
 w = ca.SX.sym('w'); x = ca.SX.sym('x'); y = ca.SX.sym('y'); z = ca.SX.sym('z')
 f = w**2 + (w - x)**2
 g = x**2 + (x - y)**2
@@ -12,9 +17,8 @@ h = y**2 + (y - z)**2
 total_cost = f + g + h
 
 # ==============================================================================
-# 2. METHOD 1: ANALYTICAL SOLUTION (Identical)
+# 2. METHOD 1: ANALYTICAL SOLUTION 
 # ==============================================================================
-print("--- 2. Defining the Analytical Solution ---")
 def solve_analytically(z_val):
     w_opt = z_val / 13.0
     x_opt = 2 * w_opt
@@ -22,9 +26,8 @@ def solve_analytically(z_val):
     return w_opt, x_opt, y_opt
 
 # ==============================================================================
-# 3. METHOD 2: JOINT OPTIMIZATION (Identical)
+# 3. METHOD 2: JOINT OPTIMIZATION 
 # ==============================================================================
-print("--- 3. Building the Joint Optimizer ---")
 nlp_joint = {'f': total_cost, 'x': ca.vcat([w, x, y]), 'p': z}
 solver_joint = ca.nlpsol('solver', 'ipopt', nlp_joint, {'ipopt.print_level': 0, 'print_time': 0})
 
@@ -34,7 +37,7 @@ def solve_jointly(z_val):
     return float(w_opt), float(x_opt), float(y_opt)
 
 # ==============================================================================
-# 4. METHOD 3: FORWARD DYNAMIC PROGRAMMING (CORRECTED)
+# 4. METHOD 3: FORWARD DYNAMIC PROGRAMMING 
 # ==============================================================================
 print("--- 4. Building the Forward DP Solution ---")
 
