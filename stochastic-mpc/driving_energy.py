@@ -91,38 +91,55 @@ df['P_driv_W'] = df.apply(lambda row: calculate_driving_power(row['speed_mps'], 
 # Extraer el perfil de potencia como un array de NumPy
 p_driv_profile = df['P_driv_W'].values
 
-# Guardar el perfil para usarlo en la simulación
-np.save(output_file_path, p_driv_profile)
+# --- MODIFICACIÓN: DUPLICAR EL CICLO DE CONDUCCIÓN (A -> AA) ---
+p_driv_profile_duplicated = np.concatenate([p_driv_profile, p_driv_profile])
 
-print(f"Perfil de potencia procesado y guardado exitosamente en: {output_file_path}")
-print(f"Número de puntos de datos: {len(p_driv_profile)}")
+# Guardar el perfil duplicado para usarlo en la simulación
+np.save(output_file_path, p_driv_profile_duplicated)
+
+print(f"Perfil de potencia procesado y DUPLICADO guardado exitosamente en: {output_file_path}")
+print(f"Número de puntos de datos del ciclo original: {len(p_driv_profile)}")
+print(f"Número de puntos de datos después de duplicar: {len(p_driv_profile_duplicated)}")
 
 
 # --- 4. VISUALIZACIÓN PARA VERIFICACIÓN ---
 
-fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+# Crear un DataFrame extendido para visualización
+total_time = df['time_s'].max() * 2  # Tiempo total duplicado
+time_extended = np.linspace(0, total_time, len(p_driv_profile_duplicated))
 
-# Gráfico 1: Perfil de Velocidad
-axs[0].plot(df['time_s'], df['speed_mph'], 'b-')
-axs[0].set_title('Ciclo de Conducción UDDS - Perfil de Velocidad')
-axs[0].set_ylabel('Velocidad (mph)')
+fig, axs = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+
+# Gráfico 1: Perfil de Potencia Resultante (P_driv) - Duplicado
+axs[0].plot(time_extended, p_driv_profile_duplicated / 1000, 'r-') # en kW para mejor escala
+axs[0].set_title('Perfil de Potencia de Manejo (P_driv) - Dos Ciclos Consecutivos')
+axs[0].set_ylabel('Potencia (kW)')
 axs[0].grid(True)
+axs[0].axhline(0, color='k', linestyle='--', linewidth=0.8)
+axs[0].axvline(df['time_s'].max(), color='purple', linestyle='--', linewidth=1.5, alpha=0.7, label='Fin del primer ciclo')
+axs[0].text(500, 25, 'Propulsión', color='red')
+axs[0].text(500, -15, 'Frenado Regenerativo', color='red')
+axs[0].legend()
 
-# Gráfico 2: Perfil de Aceleración
-axs[1].plot(df['time_s'], df['accel_mps2'], 'g-')
-axs[1].set_title('Perfil de Aceleración Calculado')
-axs[1].set_ylabel('Aceleración (m/s²)')
+# Gráfico 2: Perfil de Velocidad Original (para referencia)
+axs[1].plot(df['time_s'], df['speed_mph'], 'b-')
+axs[1].set_title('Ciclo de Conducción UDDS Original - Perfil de Velocidad')
+axs[1].set_ylabel('Velocidad (mph)')
 axs[1].grid(True)
 
-# Gráfico 3: Perfil de Potencia Resultante (P_driv)
-axs[2].plot(df['time_s'], df['P_driv_W'] / 1000, 'r-') # en kW para mejor escala
-axs[2].set_title('Perfil de Potencia de Manejo (P_driv) Resultante')
-axs[2].set_ylabel('Potencia (kW)')
+# Gráfico 3: Perfil de Aceleración Original
+axs[2].plot(df['time_s'], df['accel_mps2'], 'g-')
+axs[2].set_title('Perfil de Aceleración Calculado (Original)')
+axs[2].set_ylabel('Aceleración (m/s²)')
 axs[2].set_xlabel('Tiempo (s)')
 axs[2].grid(True)
-axs[2].axhline(0, color='k', linestyle='--', linewidth=0.8)
-axs[2].text(500, 25, 'Propulsión', color='red')
-axs[2].text(500, -15, 'Frenado Regenerativo', color='red')
 
 plt.tight_layout()
 plt.show()
+
+# Mostrar estadísticas comparativas
+print("\n--- ESTADÍSTICAS COMPARATIVAS ---")
+print(f"Potencia máxima (propulsión): {p_driv_profile.max()/1000:.2f} kW")
+print(f"Potencia mínima (regeneración): {p_driv_profile.min()/1000:.2f} kW")
+print(f"Energía neta por ciclo: {np.trapz(p_driv_profile, dx=dt)/3600000:.4f} kWh")
+print(f"Energía total para dos ciclos: {np.trapz(p_driv_profile_duplicated, dx=dt)/3600000:.4f} kWh")

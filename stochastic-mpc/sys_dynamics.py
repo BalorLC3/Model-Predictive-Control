@@ -2,12 +2,19 @@ import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 
-# --- 1. IMPORTACIONES (sin cambios) ---
-from efficiency import (get_volumetric_eff, get_isentropic_eff, get_motor_eff, 
-                        get_pump_pressure_drop, PUMP_MAX_SPEED_RPM, COMP_MAX_SPEED_RPM)
-from battery_models import get_ocv, get_rbatt, get_cnom, get_dvdt
+# --- 1. IMPORTACIONES ---
+# Asegúrate de que estos archivos (efficiency.py, battery_models.py, controllers.py) 
+# estén en la misma carpeta o ajusta el path.
+try:
+    from efficiency import (get_volumetric_eff, get_isentropic_eff, get_motor_eff,
+                            get_pump_pressure_drop, PUMP_MAX_SPEED_RPM, COMP_MAX_SPEED_RPM)
+    from battery_models import get_ocv, get_rbatt, get_cnom, get_dvdt
+    from controllers import Thermostat
+except ImportError:
+    print("ADVERTENCIA: No se encontraron los módulos externos (efficiency, battery_models, controllers).")
+    print("El script fallará si no se definen estas funciones.")
 
-# --- 2. CLASE DE PARÁMETROS (sin cambios) ---
+# --- 2. CLASE DE PARÁMETROS (CORREGIDA) ---
 class SystemParameters:
     def __init__(self):
         self.rho_rfg = 27.8
@@ -23,16 +30,17 @@ class SystemParameters:
         self.PR = 5.0
         self.h_cout_kJ = 284.3
         self.h_evaout_kJ = 250.9
-        self.m_batt = 40.0
-        self.C_batt = 1350.0
+        
+        # --- PARÁMETROS DEL PACK DE BATERÍA ---
+        self.m_batt = 40.0       # Masa total del pack [kg]
+        self.C_batt = 1350.0     # Capacidad calorífica [J/kgK]
+        self.N_series = 96       # Celdas en serie (Aprox 400V)
+        self.N_parallel = 1      # Ramas en paralelo
+        
         self.m_clnt_total = 2.0 * self.rho_clnt / 1000
 
-        # Flujo minimo de refrigerante para evitar m_clnt_dot == 0
-        self.m_clnt_dot_min = 1e-4
 
-# ===============================================================
-# === CLASE PRINCIPAL DEL ENTORNO (CON MODIFICACIONES) ===
-# ===============================================================
+# --- 3. CLASE PRINCIPAL DEL SISTEMA (CORREGIDA) ---
 class BatteryThermalSystem:
     def __init__(self, initial_state, params):
         self.params = params
@@ -41,19 +49,19 @@ class BatteryThermalSystem:
             initial_state['T_clnt'],
             initial_state['soc']
         ])
-        # Almacenará el último diccionario de diagnóstico
         self.diagnostics = {}
 
     def _system_dynamics(self, t, y, u, d):
         T_batt, T_clnt, soc = y[0], y[1], y[2]
         w_comp, w_pump = u[0], u[1]
-        P_driv, T_amb = d[0], d[1]
+        P_driv, T_amb = d[0], d[1] 
 
         # --- Modelo del Sistema de Enfriamiento ---
         eta_vol_pump = get_volumetric_eff(w_pump, PUMP_MAX_SPEED_RPM, 0.98)
         m_clnt_dot = self.params.V_pump * (w_pump / 60) * eta_vol_pump * self.params.rho_clnt
-        # aplicar flujo mínimo para evitar m_clnt_dot == 0 (suaviza el modelo)
-        m_clnt_dot = max(m_clnt_dot, self.params.m_clnt_dot_min)
+        
+        # CORRECCIÓN: Permitir flujo cero real, solo evitar negativos
+        m_clnt_dot = max(m_clnt_dot, 0.0)
 
         delta_p_pump = get_pump_pressure_drop(m_clnt_dot)
         eta_p_motor = get_motor_eff(w_pump)
@@ -69,72 +77,73 @@ class BatteryThermalSystem:
         P_comp_elec = P_comp_mech / eta_c_motor if eta_c_motor > 0 else 0
         P_cooling = P_pump_elec + P_comp_elec
 
-        # --- Modelo Eléctrico y Térmico de la Batería ---
-        P_aux = 50
-        P_batt_total = P_driv + P_cooling + P_aux  # W
+        # --- Modelo Eléctrico (ESCALADO AL PACK) ---
+        P_aux = 200 # W auxiliares
+        P_batt_total = P_driv + P_cooling + P_aux 
 
-        # Determinar modo OCV según sentido de la corriente real
         ocv_mode = 'charge' if P_batt_total < 0 else 'discharge'
-        V_oc = get_ocv(soc, T_batt, mode=ocv_mode)
-        R_batt = get_rbatt(soc, T_batt)
+        
+        # 1. Obtener valores de celda unitaria
+        V_oc_cell = get_ocv(soc, T_batt, mode=ocv_mode)
+        R_batt_cell = get_rbatt(soc, T_batt)
+        
+        # 2. Escalar a Pack Completo
+        V_oc_pack = V_oc_cell * self.params.N_series
+        R_batt_pack = (R_batt_cell * self.params.N_series) / self.params.N_parallel
+        
+        # 3. Límites de corriente basados en capacidad del pack
+        C_nom_cell = get_cnom(T_batt)
+        C_nom_pack = C_nom_cell * self.params.N_parallel
+        
+        I_max_discharge = 5.0 * C_nom_pack # Permite picos altos
+        I_max_charge    = 2.0 * C_nom_pack    
 
-        # === LIMITES FÍSICOS DE CORRIENTE ===
-        I_max_discharge = 2.5 * get_cnom(T_batt)     
-        I_max_charge    = 1.0 * get_cnom(T_batt)    
-
-        # === Corriente ideal según ecuación cuadrática ===
-        discriminant = V_oc**2 - 4 * R_batt * P_batt_total
-        if R_batt > 0 and discriminant >= 0:
-            I_batt = (V_oc - np.sqrt(discriminant)) / (2 * R_batt)
+        # 4. Cálculo de corriente (Ecuación cuadrática)
+        discriminant = V_oc_pack**2 - 4 * R_batt_pack * P_batt_total
+        
+        if R_batt_pack > 0 and discriminant >= 0:
+            I_batt = (V_oc_pack - np.sqrt(discriminant)) / (2 * R_batt_pack)
         else:
-            I_batt = 0.0
+            # Fallback si la potencia demandada excede la capacidad física
+            I_batt = P_batt_total / V_oc_pack if V_oc_pack > 0 else 0
 
-        # === Bloqueo de regeneración cuando SOC está cerca de 100% ===
-        if soc >= 0.995 and I_batt < 0:
-            I_batt = 0.0
+        # Bloqueos de seguridad SOC
+        if soc >= 0.995 and I_batt < 0: I_batt = 0.0
+        if soc <= 0.005 and I_batt > 0: I_batt = 0.0
 
-        # === Bloqueo de descarga cuando SOC está en 0% ===
-        if soc <= 0.005 and I_batt > 0:
-            I_batt = 0.0
-
-        # === Aplicar límites de corriente (saturación física) ===
         I_batt = np.clip(I_batt, -I_max_charge, I_max_discharge)
 
-        # === Recalcular potencia real *después* de límites ===
-        P_batt_total = V_oc * I_batt
+        # Recalcular potencia real eléctrica
+        P_batt_real = V_oc_pack * I_batt # Potencia en bornes (aprox)
 
-        # === Térmica: generación de calor ===
-        dVdT_batt = get_dvdt(soc)
+        # --- Modelo Térmico (Generación de Calor) ---
+        dVdT_cell = get_dvdt(soc)
+        dVdT_pack = dVdT_cell * self.params.N_series # Escalar término entrópico
+        
         T_batt_kelvin = T_batt + 273.15
-        Q_gen = I_batt**2 * R_batt - I_batt * T_batt_kelvin * dVdT_batt
+        # Calor irreversible (Joule) + Reversible (Entrópico)
+        Q_gen = (I_batt**2 * R_batt_pack) - (I_batt * T_batt_kelvin * dVdT_pack)
 
-
-        # --- Modelo de Transferencia de Calor ---
+        # --- Transferencia de Calor ---
         T_clnt_chilled = self._model_evaporator(T_clnt, m_clnt_dot, m_rfg_dot)
         T_clnt_hot, Q_cool = self._model_battery_cooling(T_batt, T_clnt_chilled, m_clnt_dot)
 
         # --- Derivadas ---
         dT_batt_dt = (Q_gen - Q_cool) / (self.params.m_batt * self.params.C_batt)
+        
         heat_gain_clnt = Q_cool
         heat_loss_clnt = m_clnt_dot * self.params.C_clnt * (T_clnt - T_clnt_chilled)
         dT_clnt_dt = (heat_gain_clnt - heat_loss_clnt) / (self.params.m_clnt_total * self.params.C_clnt)
-        C_nom_Ah = get_cnom(T_batt)
-        Qn_As = C_nom_Ah * 3600
+        
+        Qn_As = C_nom_pack * 3600
         dSOC_dt = -I_batt / Qn_As if Qn_As > 0 else 0
-        # =================
-        # TELEMETRIA: POTENCIA IN & OUT
-        # =================
-        P_out = P_batt_total if P_batt_total > 0 else 0
-        P_in = -P_batt_total if P_batt_total < 0 else 0
 
+        # Telemetría
         self.diagnostics = {
             'P_cooling': P_cooling, 'P_batt_total': P_batt_total,
-            'P_max': (V_oc**2) / (4 * R_batt) if R_batt > 0 else 0,
-            'V_oc': V_oc, 'R_batt': R_batt,
-            'discriminant': discriminant, 'I_batt': I_batt,
+            'V_oc_pack': V_oc_pack, 'I_batt': I_batt,
             'Q_gen': Q_gen, 'Q_cool': Q_cool,
-            'P_in': P_in,    
-            'P_out': P_out   
+            'm_clnt_dot': m_clnt_dot, 'T_chilled': T_clnt_chilled
         }
         
         return [dT_batt_dt, dT_clnt_dt, dSOC_dt]
@@ -146,13 +155,13 @@ class BatteryThermalSystem:
             args=(controls, disturbances), method='RK45'
         )
         self.state = sol.y[:, -1]
-        # Devolvemos el estado Y el diccionario de diagnóstico
         return self.state, self.diagnostics
 
-    # --- Métodos internos ---
     def _model_evaporator(self, T_clnt_in, m_clnt_dot, m_rfg_dot):
-        T_rfg_in = 1.2
-        if m_clnt_dot <= self.params.m_clnt_dot_min or m_rfg_dot <= 0:
+        T_rfg_in = 1.2 # Temperatura evaporación refrigerante
+        
+        # Si no hay flujo, no hay cambio de temperatura
+        if m_clnt_dot < 1e-6 or m_rfg_dot < 1e-6:
             return T_clnt_in
 
         C_clnt_dot = m_clnt_dot * self.params.C_clnt
@@ -168,73 +177,12 @@ class BatteryThermalSystem:
         T_clnt_out = T_clnt_in - (Q_actual / C_clnt_dot)
         return T_clnt_out
 
-
     def _model_battery_cooling(self, T_batt, T_clnt_in, m_clnt_dot):
-        if m_clnt_dot <= 0: return T_clnt_in, 0
+        # CORRECCIÓN: Si no hay flujo, Q_cool es 0 exacto
+        if m_clnt_dot < 1e-6: 
+            return T_clnt_in, 0.0
+            
         exponent = -(self.params.h_batt * self.params.A_batt) / (m_clnt_dot * self.params.C_clnt)
         T_clnt_out = T_batt - (T_batt - T_clnt_in) * np.exp(exponent)
         Q_cool = m_clnt_dot * self.params.C_clnt * (T_clnt_out - T_clnt_in)
         return T_clnt_out, Q_cool
-
-import numpy as np
-
-
-try:
-    driving_data = np.load('driving_energy.npy', mmap_mode='r')
-except FileNotFoundError:
-    print("Error: NO se encontro el archivo del perfil de conduccion")
-
-if __name__ == "__main__":
-    params = SystemParameters()
-    initial_state = {'T_batt': 35.0, 'T_clnt': 30.0, 'soc': 0.8}
-    env = BatteryThermalSystem(initial_state, params)    
-    controls = [300.0, 3000.0]
-
-    T_ambient = 25.0
-    dt = 1.0
-    sim_time = len(driving_data)
-    time_steps = np.arange(0, sim_time, dt)
-    history = []
-    diagnostics_history = []
-
-    for i, t in enumerate(time_steps):
-        # potencia de manejo del perfil para tiempoa actual
-        current_p_driv = driving_data[i]
-        # Crear vector de perturbaciones para este step
-        current_disturbances = [current_p_driv, T_ambient]
-        history.append(env.state)
-        if i % 100 == 0: 
-            # Naivy control
-            controls = [x - np.pi * i // 10 for x in controls]
-            if any(control <= 0 for control in controls):
-                controls = [0, 0]
-        _, diagnostics = env.step(controls, current_disturbances, dt)
-        diagnostics_history.append(diagnostics)
-    
-    history = np.array(history)
-
-    diagnostics_log = {k: np.array([d[k] for d in diagnostics_history]) for k in diagnostics_history[0]}
-    
-
-    fig, axs = plt.subplots(4, 1, figsize=(12, 12), sharex=True)
-    
-    axs[0].plot(time_steps, driving_data / 1000, 'k-', alpha=0.8)
-    axs[0].set_title('Perfil de Potencia de Manejo (Perturbación)')
-    axs[0].set_ylabel('P_driv (kW)')
-    axs[0].grid(True)
-    
-    axs[1].plot(time_steps, history[:, 0], label='T Batería')
-    axs[1].plot(time_steps, history[:, 1], label='T Refrigerante')
-    axs[1].set_ylabel('Temperatura (°C)')
-    axs[1].legend(); axs[1].grid(True)
-
-    axs[2].plot(time_steps, history[:, 2] * 100)
-    axs[2].set_ylabel('SOC (%)'); axs[2].grid(True)
-
-    axs[3].plot(time_steps, diagnostics_log['I_batt'])
-    axs[3].set_ylabel('Corriente (A)'); axs[3].grid(True)
-    axs[3].set_xlabel('Tiempo (s)')
-
-    plt.suptitle('Simulacion de Lazo Abierto (Ciclo UDDS)', fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
