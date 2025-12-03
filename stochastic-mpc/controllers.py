@@ -9,33 +9,31 @@ class BaseController(ABC):
     def compute_control(self, state, disturbance):
         pass
 
+import numpy as np
+
 class Thermostat(BaseController):
     '''Rule based controller; threshold based'''
     def __init__(self):
         self.cooling_active = False
 
     def compute_control(self, state, disturbance):
-        T_batt, T_clnt, soc = state
-        # Thresholds
+        T_batt, _, _ = state
         T_upper, T_lower = [34.0, 32.5]
-
-        if T_batt > T_upper: # Upper temperature threshold [celsius]
-            self.cooling_active = True
-        elif T_batt < T_lower: # Lower temperature threshold 
-            self.cooling_active = False
-
-        if self.cooling_active:
-            w_pump = 2000 # [rpm]
-            w_comp = 3000 
-        else:
-            w_pump = 0 # [rpm]
-            w_comp = 0 
-        return np.array([w_comp, w_pump])
-
-
+        
+        self.cooling_active = np.where(
+            T_batt > T_upper, 
+            True, 
+            np.where(T_batt < T_lower, False, self.cooling_active)
+        )
+        
+        w_pump = np.where(self.cooling_active, 2000.0, 0.0)
+        w_comp = np.where(self.cooling_active, 3000.0, 0.0)
+        
+        return w_comp, w_pump
+    
 class Constraints():
     def __init__(self):
-        self.rho_
+        self.p = 0
         
 class SMPC():
     pass

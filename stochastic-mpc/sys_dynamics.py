@@ -81,7 +81,7 @@ class BatteryThermalSystem:
         P_aux = 200 # W auxiliares
         P_batt_total = P_driv + P_cooling + P_aux 
 
-        ocv_mode = 'charge' if P_batt_total < 0 else 'discharge'
+        ocv_mode = np.where(P_batt_total < 0, 'charge', 'discharge')
         
         # 1. Obtener valores de celda unitaria
         V_oc_cell = get_ocv(soc, T_batt, mode=ocv_mode)
@@ -101,15 +101,16 @@ class BatteryThermalSystem:
         # 4. Cálculo de corriente (Ecuación cuadrática)
         discriminant = V_oc_pack**2 - 4 * R_batt_pack * P_batt_total
         
-        if R_batt_pack > 0 and discriminant >= 0:
-            I_batt = (V_oc_pack - np.sqrt(discriminant)) / (2 * R_batt_pack)
-        else:
-            # Fallback si la potencia demandada excede la capacidad física
-            I_batt = P_batt_total / V_oc_pack if V_oc_pack > 0 else 0
-
+        conditions = (R_batt_pack > 0) & (discriminant >= 0)
+        I_batt = np.where(
+            conditions,
+            (V_oc_pack - np.sqrt(np.maximum(discriminant, 0))) / (2 * R_batt_pack),
+            np.where(V_oc_pack > 0, P_batt_total / V_oc_pack, 0)
+)
+        
         # Bloqueos de seguridad SOC
-        if soc >= 0.995 and I_batt < 0: I_batt = 0.0
-        if soc <= 0.005 and I_batt > 0: I_batt = 0.0
+        I_batt = np.where((soc >= 0.995) & (I_batt < 0), 0.0,
+                 np.where((soc <= 0.005) & (I_batt > 0), 0.0, I_batt))
 
         I_batt = np.clip(I_batt, -I_max_charge, I_max_discharge)
 

@@ -4,6 +4,7 @@ from sys_dynamics import BatteryThermalSystem, SystemParameters
 from setup import SimConfiguration, run_simulation
 from controllers import Thermostat
 from plot_utils import plot_results, plot_signal
+import time
 
 if __name__ == "__main__":
     try: 
@@ -21,8 +22,10 @@ if __name__ == "__main__":
     params = SystemParameters()
     init_state = {'T_batt': 30.0, 'T_clnt':30.0, 'soc':0.8}
 
+    start = time.time()
     env = BatteryThermalSystem(init_state, params)
     ctrl_thermo = Thermostat()
     df_thermo = run_simulation(env, ctrl_thermo, config)
 
+    print(f"Done Thermostat in {time.time()-start:.2f}s")
     plot_results(df_thermo)
