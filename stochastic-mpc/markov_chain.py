@@ -15,7 +15,7 @@ def compute_markov_chain(disturbance, n_bins=15):
     
     # This is the value the MPC will "see"
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    
+
     # 2. Assign Data to Bins
     # indices will be from 1 to n_bins (np.digitize convention)
     indices = np.digitize(disturbance, bin_edges) - 1

@@ -69,17 +69,13 @@ if __name__ == "__main__":
     dist = jnp.hstack([data.reshape(-1,1), jnp.full((N,1), 40.0)])
     params = SystemParameters()
     
-    # --- STEP 1: SOLVE DP ---
     policy_cube = run_dp_offline(dist, params)
     
-    # --- STEP 2: CREATE CONTROLLER ---
     dp_ctrl_fn = make_dp_controller_fn(policy_cube)
     
-    # --- STEP 3: RUN SIMULATION ---
     init_state = jnp.array([30.0, 30.0, 0.8])
     history = run_simulation(init_state, dp_ctrl_fn, dist, params, 1.0)
     
-    # --- 4. PREPARAR DATOS PARA GRAFICAR ---
     # Extraemos las matrices de JAX a Numpy para Pandas
     states_hist = np.array(history['state'])
     ctrl_hist = np.array(history['controls'])
@@ -93,7 +89,7 @@ if __name__ == "__main__":
         # Controles
         'w_comp': ctrl_hist[:, 0],
         'w_pump': ctrl_hist[:, 1],
-        # Diagnósticos (Necesarios para plot_results)
+        # Diagnósticos 
         'P_cooling': diag_hist[:, 0],
         'Q_gen':     diag_hist[:, 4],
         'Q_cool':    diag_hist[:, 5]

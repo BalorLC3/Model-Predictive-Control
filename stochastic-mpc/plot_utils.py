@@ -67,5 +67,3 @@ def plot_results(df_controller, dt=1.0): # Added dt argument
     axs[4].set_xlabel('Time (s)')
     axs[4].set_ylabel('Cooling Energy\nConsumed [kJ]')
     axs[4].grid(True, which='both')
-
-    plt.show()

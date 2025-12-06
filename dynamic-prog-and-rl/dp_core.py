@@ -12,8 +12,8 @@ TB_GRID = jnp.linspace(TB_MIN, TB_MAX, TB_N)
 TC_GRID = jnp.linspace(TC_MIN, TC_MAX, TC_N)
 
 # Action Space (16 combinations)
-W_COMP_OPTS = jnp.linspace(0.0, 5000.0, 9)
-W_PUMP_OPTS = jnp.linspace(0.0, 6000.0, 9)
+W_COMP_OPTS = jnp.linspace(0.0, 5000.0, 8)
+W_PUMP_OPTS = jnp.linspace(0.0, 6000.0, 8)
 U_GRID = jnp.dstack(jnp.meshgrid(W_COMP_OPTS, W_PUMP_OPTS)).reshape(-1, 2)
 
 def get_normalized_coords(T_batt, T_clnt):
@@ -37,13 +37,15 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
     def evaluate_state_action(state, action):
         next_state, diag = rk4_step(state, action, disturbance, params, dt)
         
-        P_cooling = diag[0] # Watts
+        P_batt = diag[7] # Watts
+        P_comp = diag[8] 
+        P_total = P_comp + P_batt
         T_next = next_state[0]
         
         # --- COST FUNCTION ---
         # 1. Pure Energy (Joules -> normalized)
         # We scale it so 1 kWh ~ 1.0 cost unit roughly, to balance with penalty
-        J_energy = P_cooling * dt / 3.6e3 
+        J_energy = P_total * dt / 3.6e3 
         
         # 2. Barrier Penalty (Safety)
         # If T > 34, cost explodes.
