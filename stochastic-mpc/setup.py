@@ -7,6 +7,7 @@ import time
 class SimConfiguration:
     """Holds the scenario parameters to ensure all controllers run on identical conditions"""
     driving_data: np.array
+    velocity_data: np.array
     T_amb: float
     dt: float = 1.0
     total_time: int = None
@@ -25,10 +26,11 @@ def run_simulation(system, controller, config: SimConfiguration):
     for i, t in enumerate(time_steps):
         idx = min(i, len(config.driving_data)-1)
         current_p_driv = config.driving_data[idx]
+        current_velocity = config.velocity_data[idx]
 
         disturbances = np.array([current_p_driv, config.T_amb])
 
-        controls = controller.compute_control(system.state, disturbances)
+        controls = controller.compute_control(system.state, disturbances, current_velocity)
         next_state, diagnostics = system.step(controls, disturbances, config.dt)
 
         record = {

@@ -29,7 +29,6 @@ class SystemParameters:
         
         self.m_clnt_total = 2.0 * self.rho_clnt / 1000
 
-# Nota: En CasADi NO necesitamos registrar PyTrees. 
 # Los parámetros se pasan como objetos normales de Python durante la construcción del grafo.
 
 class BatteryThermalSystem:

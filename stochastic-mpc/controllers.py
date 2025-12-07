@@ -3,11 +3,12 @@ import numpy as np
 from abc import ABC, abstractmethod
 from casadi_ode_solver import rk4_step_ca
 from sys_dynamics_casadi import SystemParameters
-# from markov_chain import compute_markov_chain # Comentado si no se usa
+from collections import deque
+from sklearn.cluster import KMeans
 
 class BaseController(ABC):
     @abstractmethod
-    def compute_control(self, state, disturbance):
+    def compute_control(self, state, disturbance, velocity=0.0):
         pass
 
 class Thermostat(BaseController):
@@ -15,7 +16,7 @@ class Thermostat(BaseController):
     def __init__(self):
         self.cooling_active = False
 
-    def compute_control(self, state, disturbance):
+    def compute_control(self, state, disturbance, velocity=0.0):
         T_batt, _, _ = state
         T_upper, T_lower = 34.0, 32.5
         
@@ -47,58 +48,117 @@ class Thermostat(BaseController):
     # w_{pump,min} \le w_{pump}(k) \le w_{pump,max}
     # P_{batt,min} \le P_{batt}(k) \le P_{batt,max}
     # SOC_{min}    \le SOC(k)      \le SOC_{max}
+        
+def train_smart_markov(power, velocity, dt, n_clusters=15):
+    """
+    Trains Transition Matrices based on Vehicle Dynamic Context.
+    Contexts:
+    0: Braking (a < -0.5 m/s2) -> Expect Regen
+    1: Traffic/Idle (v < 5 m/s) -> Expect Low Power
+    2: Cruising (v >= 5, low a) -> Expect Steady Power
+    3: Accelerating (a > 0.5)   -> Expect High Power
+    """
+    # 1. Cluster Power Data (1D K-Means)
+    X = power.reshape(-1, 1)
+    kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=17)
+    labels = kmeans.fit_predict(X)
+    centers = kmeans.cluster_centers_.flatten()
+    
+    # Sort centers to make physical sense (Low -> High)
+    sorted_idx = np.argsort(centers)
+    centers = centers[sorted_idx]
+    map_label = {old: new for new, old in enumerate(sorted_idx)}
+    mapped_labels = np.array([map_label[x] for x in labels])
+    
+    # 2. Calculate Acceleration
+    accel = np.diff(velocity, prepend=velocity[0]) / dt
+    
+    # 3. Build 4 Contextual Matrices
+    # Shape: [4 Contexts, From_State, To_State]
+    matrices = np.zeros((4, n_clusters, n_clusters))
+    
+    for k in range(len(mapped_labels) - 1):
+        curr_s = mapped_labels[k]
+        next_s = mapped_labels[k+1]
+        
+        v = velocity[k]
+        a = accel[k]
+        
+        # Classify Context
+        if a < -0.5:
+            ctx = 0 # Braking
+        elif v < 5.0:
+            ctx = 1 # Traffic/Idle
+        elif a > 0.5:
+            ctx = 3 # Accelerating
+        else:
+            ctx = 2 # Cruising
+            
+        matrices[ctx, curr_s, next_s] += 1
+        
+    # 4. Normalize (Row Stochastic)
+    for ctx in range(4):
+        row_sums = matrices[ctx].sum(axis=1, keepdims=True)
+        # Avoid division by zero; if row is empty, uniform prob or identity
+        # Here we leave it 0 but ensure we handle it or fill identity
+        matrices[ctx] = np.divide(matrices[ctx], row_sums, where=row_sums!=0)
+        
+        # Self-loop for unvisited states in a specific context to avoid numerical issues
+        for r in range(n_clusters):
+            if row_sums[r] == 0:
+                matrices[ctx, r, r] = 1.0
+                
+    return centers, matrices
 
 
-class NMPC(BaseController):
-    def __init__(self, driving_data, dt=1.0, horizon=10):
+class DMPC(BaseController):
+    def __init__(self, dt=1.0, T_des=32.5, horizon=20, alpha=1.0, avg_window=15):
+        """
+        Deterministic MPC with Recursive Moving Average Filter.
+        Predicts future power is constant = average of last 'n' seconds.
+        """
         self.dt = dt
         self.N = horizon
         self.params = SystemParameters()
-        self.driving_data = driving_data 
+        
+        # --- Filter Config ---
+        self.n_window = int(avg_window)
+        self.p_driv_history = deque(maxlen=self.n_window)
+        self.prev_avg = 0.0
         
         self.current_step_idx = 0
         
-        # Memory for warm start (Ahora incluye Slacks)
+        # Dimensions
         self.n_x = 3 * (self.N + 1)
         self.n_u = 2 * self.N
-        self.n_slack = 2 * (self.N + 1) # 2 variables de holgura por paso (T_min y T_max)
+        self.n_slack = 2 * (self.N + 1)
 
-        # --- Constraints Config ---
-        # Temperaturas (Se convertirán en Soft Constraints)
+        # Constraints
         self.T_mins = np.array([30.0, 28.0]) 
         self.T_maxs = np.array([35.0, 34.0])
-        
-        # Actuadores (Hard Constraints - Límites físicos reales)
         self.w_mins = np.array([0.0, 0.0])   
         self.w_maxs = np.array([10000.0, 10000.0])
-        
         self.P_batt_min = -200.0
         self.P_batt_max = 200.0 
 
-        # Cost parameters
-        self.alpha = 50.0
-        self.T_des = 32.5
-        self.rho_soft = 1e5 # Penalización por violar temperatura
+        # Parameters
+        self.alpha = alpha
+        self.T_des = T_des
+        self.rho_soft = 0.2 # Low penalty for fairness
 
-        # --- Build Solver ---
-        print("Compiling NMPC Solver...")
+        # Build Solver
+        print("Compiling DMPC Solver...")
         self._build_solver()
         print("Done.")
 
-        
         self.x_guess = np.zeros(self.n_x)
         self.u_guess = np.zeros(self.n_u)
         self.slack_guess = np.zeros(self.n_slack)
 
     def _build_solver(self):
-        # 1. Variables Simbólicas
-        X = ca.MX.sym('X', 3, self.N + 1) # [T_batt, T_clnt, SOC]
-        U = ca.MX.sym('U', 2, self.N)     # [w_comp, w_pump]
-        
-        # S[0, k]: Cuánto nos pasamos del T_max
-        # S[1, k]: Cuánto nos bajamos del T_min
+        X = ca.MX.sym('X', 3, self.N + 1) 
+        U = ca.MX.sym('U', 2, self.N)     
         S = ca.MX.sym('S', 2, self.N + 1) 
-        
         P_x0 = ca.MX.sym('P_x0', 3)       
         P_dist = ca.MX.sym('P_dist', 2, self.N) 
         
@@ -106,162 +166,280 @@ class NMPC(BaseController):
         g = []
         lbg = []
         ubg = []
-        
         zeros_3 = np.zeros(3)
 
-        # 2. Restricción Inicial
         g.append(X[:, 0] - P_x0)
-        lbg.append(zeros_3)
-        ubg.append(zeros_3)
+        lbg.append(zeros_3); ubg.append(zeros_3)
 
-        # 3. Bucle del Horizonte
         for k in range(self.N):
             x_next, diag = rk4_step_ca(X[:, k], U[:, k], P_dist[:, k], self.params, self.dt)
-            
-            # Dinámica
             g.append(x_next - X[:, k+1])
-            lbg.append(zeros_3)
-            ubg.append(zeros_3)
+            lbg.append(zeros_3); ubg.append(zeros_3)
             
-            P_batt_kW = diag[1] / 1000.0 # Ajusta índice según tu rk4
-            P_comp_kW = diag[8] / 1000.0 # Ajusta índice según tu rk4
+            P_batt_kW = diag[1] / 1000.0
+            P_comp_kW = diag[7] / 1000.0
             
-            # --- FUNCIÓN DE COSTO ---
-            # 1. Energía
-            obj += (P_batt_kW + P_comp_kW) * self.dt
-            
-            # 2. Penalización Soft Constraint (Holguras al cuadrado)
-            # Esto evita el crash: Si T > 35, S > 0, el costo sube mucho, pero es factible.
+            # Energy Cost
+            obj += (P_batt_kW + P_comp_kW) * (self.dt / 3600.0)
+            # Slack Cost
             obj += self.rho_soft * (S[0, k]**2 + S[1, k]**2)
             
-            # --- RESTRICCIONES ---
+            # Hard Power
+            g.append(P_batt_kW); lbg.append([self.P_batt_min]); ubg.append([self.P_batt_max])
             
-            # Potencia (Hard Constraint)
-            g.append(P_batt_kW)
-            lbg.append([self.P_batt_min])
-            ubg.append([self.P_batt_max])
-            
-            # SOFT CONSTRAINT
-            #      X[0] - S[0] <= 35.0
-            g.append(X[0, k] - S[0, k])
-            ubg.append([self.T_maxs[0]]) 
-            lbg.append([-ca.inf])
-            
-            #      X[0] + S[1] >= 30.0
-            g.append(X[0, k] + S[1, k])
-            lbg.append([self.T_mins[0]])
-            ubg.append([ca.inf])
+            # Soft Temp (Upper)
+            g.append(X[0, k] - S[0, k]); ubg.append([self.T_maxs[0]]); lbg.append([-ca.inf])
+            # Soft Temp (Lower)
+            g.append(X[0, k] + S[1, k]); lbg.append([self.T_mins[0]]); ubg.append([ca.inf])
 
-        # 4. Costo Terminal
         obj += self.alpha * (X[0, self.N] - self.T_des)**2
         
-        # 5. Bounds (Límites de variables de decisión)
-        
-        # T_batt, T_clnt: Los ponemos "infinitos" en lbx/ubx porque la restricción real
-        # está manejada arriba en 'g' con las slacks.
+        # Bounds (Loose)
         lbx_X = np.tile([-ca.inf, -ca.inf, -ca.inf], self.N + 1)
         ubx_X = np.tile([ca.inf, ca.inf, ca.inf], self.N + 1)
-        
-        # Actuadores (Hard Bounds)
         lbx_U = np.tile(self.w_mins, self.N)
         ubx_U = np.tile(self.w_maxs, self.N)
-        
-        # Slacks Bounds: Deben ser positivas (0 a Infinito)
-        # S = 0 significa que se cumple la restricción.
-        lbx_S = np.zeros(self.n_slack)
-        ubx_S = np.full(self.n_slack, ca.inf)
+        lbx_S = np.zeros(self.n_slack); ubx_S = np.full(self.n_slack, ca.inf)
         
         self.lbx = np.concatenate([lbx_X, lbx_U, lbx_S])
         self.ubx = np.concatenate([ubx_X, ubx_U, ubx_S])
-        
-        self.lbg = np.concatenate(lbg)
-        self.ubg = np.concatenate(ubg)
+        self.lbg = np.concatenate(lbg); self.ubg = np.concatenate(ubg)
 
-        # 6. NLP Solver
-        # Agregamos S al vector de decisión
         OPT_vars = ca.vertcat(ca.vec(X), ca.vec(U), ca.vec(S))
         OPT_params = ca.vertcat(P_x0, ca.vec(P_dist))
-        
         nlp = {'f': obj, 'x': OPT_vars, 'g': ca.vertcat(*g), 'p': OPT_params}
-        
         opts = {
             'ipopt.print_level': 0, 
-            'print_time': 0,
-            'ipopt.max_iter': 150, 
-            'ipopt.tol': 1e-2,
-            'ipopt.acceptable_tol': 1e-2, # Tolerancia más relajada para casos difíciles
-            'ipopt.acceptable_iter': 15,
-            'ipopt.warm_start_init_point': 'yes',
-            'expand': True
+            'print_time': 0, 
+            'ipopt.tol': 1e-4, 
+            'expand': True,
         }
         self.solver = ca.nlpsol('NMPC', 'ipopt', nlp, opts)
 
-    def compute_control(self, state, current_disturbance):
-        idx = self.current_step_idx
-        len_d = len(self.driving_data)
-        end_idx = idx + self.N
+    def compute_control(self, state, current_disturbance, velocity=0.0):
+        current_P_driv = current_disturbance[0]
+        current_T_amb = current_disturbance[1]
         
-        # 1. Padding
-        if end_idx <= len_d:
-            p_driv_horizon = self.driving_data[idx : end_idx]
+        # Filter Logic
+        if len(self.p_driv_history) == self.n_window:
+            val_k = current_P_driv
+            val_k_minus_n = self.p_driv_history[0] 
+            current_avg = self.prev_avg + (val_k - val_k_minus_n) / self.n_window
+            self.p_driv_history.append(val_k)
         else:
-            remaining = self.driving_data[idx:]
-            p_driv_horizon = np.pad(remaining, (0, self.N - len(remaining)), 'edge')
-            
-        t_amb_horizon = np.full(self.N, current_disturbance[1])
+            self.p_driv_history.append(current_P_driv)
+            current_avg = np.mean(self.p_driv_history)
+        
+        self.prev_avg = current_avg
+
+        # Prediction: Constant Average
+        p_driv_horizon = np.full(self.N, current_avg)
+        t_amb_horizon = np.full(self.N, current_T_amb)
+        
         d_horizon = np.vstack([p_driv_horizon, t_amb_horizon])
         d_flat = d_horizon.flatten(order='F')
         
-        # 2. Setup Solver Inputs
         p_val = np.concatenate([state, d_flat])
-        
-        # Warm start incluye slacks ahora
         x0_val = np.concatenate([self.x_guess, self.u_guess, self.slack_guess])
         
         try:
-            res = self.solver(
-                x0=x0_val,
-                p=p_val,
-                lbx=self.lbx,
-                ubx=self.ubx,
-                lbg=self.lbg,
-                ubg=self.ubg
-            )
-            
-            # Extracción optimizada
+            res = self.solver(x0=x0_val, p=p_val, lbx=self.lbx, ubx=self.ubx, lbg=self.lbg, ubg=self.ubg)
             opt_var = res['x'].full().flatten()
+            u_opt = opt_var[self.n_x : self.n_x + 2]
             
-            # --- Indices ---
-            idx_x_end = self.n_x
-            idx_u_end = self.n_x + self.n_u
+            # Warm Start
+            idx_u = self.n_x; idx_s = self.n_x + self.n_u
+            x_traj = opt_var[:idx_u].reshape(3, self.N+1)
+            u_traj = opt_var[idx_u:idx_s].reshape(2, self.N)
+            s_traj = opt_var[idx_s:].reshape(2, self.N+1)
             
-            # Control óptimo actual
-            u_opt = opt_var[idx_x_end : idx_x_end + 2]
-            
-            # --- Actualizar Warm Start ---
-            
-            # Estados
-            x_traj = opt_var[:idx_x_end].reshape(3, self.N+1)
             self.x_guess = np.hstack([x_traj[:, 1:], x_traj[:, -1:]]).flatten()
-            
-            # Controles
-            u_traj = opt_var[idx_x_end : idx_u_end].reshape(2, self.N)
             self.u_guess = np.hstack([u_traj[:, 1:], u_traj[:, -1:]]).flatten()
-            
-            # Slacks
-            s_traj = opt_var[idx_u_end:].reshape(2, self.N+1)
             self.slack_guess = np.hstack([s_traj[:, 1:], s_traj[:, -1:]]).flatten()
             
             self.current_step_idx += 1
             return u_opt
             
         except Exception as e:
-            print(f'Crash en Solver step {idx}: {e}')
-            self.current_step_idx += 1
+            # Fallback
             self.x_guess = np.zeros(self.n_x)
-            self.u_guess = np.zeros(self.n_u)
-            self.slack_guess = np.zeros(self.n_slack)
-            return np.array([5000.0, 5000.0]) # Max cooling fallback
+            return np.array([5000.0, 5000.0])
 
 
+class SMPC(BaseController):
+    def __init__(self, driving_power, driving_velocity, dt=1.0, T_des=32.5, horizon=20, alpha=1.0, n_clusters=15):
+        """
+        SMPC (Expected Value).
+        Uses Contextual Markov Chain (Velocity/Accel aware) to predict Expected Power.
+        """
+        self.dt = dt
+        self.N = horizon
+        self.params = SystemParameters()
+        self.n_clusters = n_clusters
+        
+        print(f"Training Smart Markov ({n_clusters} clusters)...")
+        self.centers, self.matrices = train_smart_markov(driving_power, driving_velocity, dt, n_clusters)
+        print("Done.")
+        
+        self.current_step_idx = 0
+        self.prev_velocity = 0.0 
+        
+        # Dimensions
+        self.n_x = 3 * (self.N + 1)
+        self.n_u = 2 * self.N
+        self.n_slack = 2 * (self.N + 1)
 
+        self.T_mins = np.array([30.0, 28.0]) 
+        self.T_maxs = np.array([35.0, 34.0])
+        self.w_mins = np.array([0.0, 0.0])   
+        self.w_maxs = np.array([10000.0, 10000.0])
+        self.P_batt_min = -200.0
+        self.P_batt_max = 200.0 
+        
+        self.alpha = alpha
+        self.T_des = T_des
+        
+        # Equal to DMPC for fair comparison
+        self.rho_soft = 0.2 
+
+        print("Compiling SMPC Solver...")
+        self._build_solver()
+        print("Done.")
+
+        self.x_guess = np.zeros(self.n_x)
+        self.u_guess = np.zeros(self.n_u)
+        self.slack_guess = np.zeros(self.n_slack)
+
+    def _build_solver(self):
+        X = ca.MX.sym('X', 3, self.N + 1) 
+        U = ca.MX.sym('U', 2, self.N)     
+        S = ca.MX.sym('S', 2, self.N + 1) 
+        P_x0 = ca.MX.sym('P_x0', 3)       
+        # Input: Expected Disturbance Trajectory
+        P_dist_expected = ca.MX.sym('P_dist', 2, self.N) 
+        
+        obj = 0
+        g = []
+        lbg = []
+        ubg = []
+        zeros_3 = np.zeros(3)
+
+        g.append(X[:, 0] - P_x0)
+        lbg.append(zeros_3); ubg.append(zeros_3)
+
+        for k in range(self.N):
+            x_next, diag = rk4_step_ca(X[:, k], U[:, k], P_dist_expected[:, k], self.params, self.dt)
+            g.append(x_next - X[:, k+1])
+            lbg.append(zeros_3); ubg.append(zeros_3)
+            
+            P_batt_kW = diag[1] / 1000.0
+            P_comp_kW = diag[7] / 1000.0
+            
+            # Expected Cost
+            obj += (P_batt_kW + P_comp_kW) * (self.dt / 3600.0)
+            obj += self.rho_soft * (S[0, k]**2 + S[1, k]**2)
+            
+            # Constraints (Applied on Expected Trajectory)
+            g.append(P_batt_kW); lbg.append([self.P_batt_min]); ubg.append([self.P_batt_max])
+            
+            g.append(X[0, k] - S[0, k]); ubg.append([self.T_maxs[0]]); lbg.append([-np.inf])
+            g.append(X[0, k] + S[1, k]); lbg.append([self.T_mins[0]]); ubg.append([np.inf])
+
+        obj += self.alpha * (X[0, self.N] - self.T_des)**2
+        
+        # --- SAFETY BOX BOUNDS ---
+        lbx_X = np.tile([-np.inf, -np.inf, -np.inf], self.N + 1)
+        ubx_X = np.tile([np.inf, np.inf, np.inf], self.N + 1)
+        
+        lbx_U = np.tile(self.w_mins, self.N)
+        ubx_U = np.tile(self.w_maxs, self.N)
+        
+        # Bound the Slack to reasonable values (e.g., max 5 deg violation)
+        # If Inf, solver exploits low rho to generate NaNs.
+        lbx_S = np.zeros(self.n_slack)
+        ubx_S = np.full(self.n_slack, 5.0) 
+        
+        self.lbx = np.concatenate([lbx_X, lbx_U, lbx_S])
+        self.ubx = np.concatenate([ubx_X, ubx_U, ubx_S])
+        self.lbg = np.concatenate(lbg); self.ubg = np.concatenate(ubg)
+
+        OPT_vars = ca.vertcat(ca.vec(X), ca.vec(U), ca.vec(S))
+        OPT_params = ca.vertcat(P_x0, ca.vec(P_dist_expected))
+        
+        nlp = {'f': obj, 'x': OPT_vars, 'g': ca.vertcat(*g), 'p': OPT_params}
+        opts = {
+            'ipopt.print_level': 0, 
+            'print_time': 0, 
+            'ipopt.tol': 1e-4, 
+            'expand': True,
+            'ipopt.bound_mult_init_method': 'mu-based' # Stability fix
+        }
+        # opts = {'ipopt.print_level': 0, 'print_time': 0, 'ipopt.tol': 1e-4, 'expand': True}
+        self.solver = ca.nlpsol('ExpectedSMPC', 'ipopt', nlp, opts)
+
+    def compute_control(self, state, current_disturbance, velocity=0.0):
+        curr_P = current_disturbance[0]
+        curr_T_amb = current_disturbance[1]
+        
+        # 1. Determine Context (Smart Markov)
+        if self.current_step_idx == 0:
+            accel = 0.0
+        else:
+            accel = (velocity - self.prev_velocity) / self.dt
+        self.prev_velocity = velocity
+        
+        # Select Matrix
+        if accel < -0.5: ctx = 0 # Brake
+        elif velocity < 5.0: ctx = 1 # Idle
+        elif accel > 0.5: ctx = 3 # Accel
+        else: ctx = 2 # Cruise
+            
+        P_matrix = self.matrices[ctx]
+        
+        # 2. Identify Current Cluster
+        cluster_idx = (np.abs(self.centers - curr_P)).argmin()
+        
+        # 3. Propagate Expected Value
+        pi_vec = np.zeros(self.n_clusters); pi_vec[cluster_idx] = 1.0
+        expected_power = np.zeros(self.N)
+        
+        for k in range(self.N):
+            expected_power[k] = np.dot(pi_vec, self.centers)
+            pi_vec = pi_vec @ P_matrix
+            
+        t_amb_horizon = np.full(self.N, curr_T_amb)
+        
+        # 4. Solve
+        p_inputs_horizon = np.vstack([expected_power, t_amb_horizon])
+        p_flat = p_inputs_horizon.flatten(order='F')
+        
+        p_val = np.concatenate([state, p_flat])
+        x0_val = np.concatenate([self.x_guess, self.u_guess, self.slack_guess])
+        
+        try:
+            res = self.solver(x0=x0_val, p=p_val, lbx=self.lbx, ubx=self.ubx, lbg=self.lbg, ubg=self.ubg)
+            
+            # Robust extraction
+            if not self.solver.stats()['success']:
+                # Optimization failed partially, but result might be usable.
+                # Reset warm start to prevent error propagation.
+                self.x_guess = np.zeros(self.n_x)
+            else:
+                opt_var = res['x'].full().flatten()
+                idx_u = self.n_x; idx_s = self.n_x + self.n_u
+                
+                # Update Warm Start
+                x_traj = opt_var[:idx_u].reshape(3, self.N+1)
+                u_traj = opt_var[idx_u:idx_s].reshape(2, self.N)
+                s_traj = opt_var[idx_s:].reshape(2, self.N+1)
+                
+                self.x_guess = np.hstack([x_traj[:,1:], x_traj[:,-1:]]).flatten()
+                self.u_guess = np.hstack([u_traj[:,1:], u_traj[:,-1:]]).flatten()
+                self.slack_guess = np.hstack([s_traj[:,1:], s_traj[:,-1:]]).flatten()
+
+            return res['x'].full().flatten()[self.n_x : self.n_x + 2]
+            
+        except Exception:
+            self.x_guess = np.zeros(self.n_x)
+            self.current_step_idx += 1
+            return np.array([5000.0, 5000.0])

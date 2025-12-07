@@ -150,7 +150,7 @@ def battery_dynamics_ode_ca(state, controls, disturbances, params):
 
     # Diagnostic vector (Vertcat para crear vector columna CasADi)
     diagnostics = ca.vertcat(
-        P_cooling, P_batt_total, V_oc_pack, I_batt, Q_gen, Q_cool, m_clnt_dot, T_clnt_chilled, P_comp_elec
+        P_cooling, P_batt_total, V_oc_pack, I_batt, Q_gen, Q_cool, m_clnt_dot, P_comp_elec
     )
 
     return ca.vertcat(dT_batt_dt, dT_clnt_dt, dSOC_dt), diagnostics
