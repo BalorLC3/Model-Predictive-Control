@@ -21,6 +21,7 @@ if __name__ == "__main__":
 
     params = SystemParameters()
     init_state = {'T_batt': 30.0, 'T_clnt': 30.0, 'soc': 0.8}
+    T_des = 33.0
     horizon = 5
     # ==========================================
     # SIMULACIÓN TERMOSTATO (BASELINE)
@@ -37,17 +38,17 @@ if __name__ == "__main__":
     # ==========================================
     # SIMULACIÓN NMPC (DETERMINISTA)
     # ==========================================
-    print("\n--- Ejecutando DMPC ---")    
-    ctrl_DMPC = DMPC(
-        dt=1.0, 
-        T_des=32.5,
-        horizon=horizon,     # Before horizon 5
-        alpha=0.04,
-        avg_window=15
-    )
-    env_dmpc = BatteryThermalSystem(init_state, params)    
-    df_dmpc = run_simulation(env_dmpc, ctrl_DMPC, config)
-    plot_results(df_dmpc, 'dmpc')
+    # print("\n--- Ejecutando DMPC ---")    
+    # ctrl_DMPC = DMPC(
+    #     dt=1.0, 
+    #     T_des=T_des,
+    #     horizon=horizon,     # Before horizon 5
+    #     alpha=0.065,
+    #     avg_window=15
+    # )
+    # env_dmpc = BatteryThermalSystem(init_state, params)    
+    # df_dmpc = run_simulation(env_dmpc, ctrl_DMPC, config)
+    # plot_results(df_dmpc, 'dmpc')
     
     # ==========================================
     # SIMULACIÓN SMPC (ESTOCASTICO)
@@ -57,10 +58,10 @@ if __name__ == "__main__":
         driving_data,
         velocity_data,
         dt = 1.0,
-        T_des=32.5,
+        T_des=T_des,
         horizon=horizon,
-        alpha=0.0185, # 0.016 yields 10% less than thermostat
-        n_clusters=16
+        alpha=0.0016, # 0.016 yields good results
+        n_clusters=4
     )
 
     env_smpc = BatteryThermalSystem(init_state, params)
@@ -73,10 +74,10 @@ if __name__ == "__main__":
     # ==========================================
     print("\nGenerando comparativa...")    
     e_thermo = df_thermo['P_cooling'].sum() * 1.0 / 3.6e6
-    e_dmpc = df_dmpc['P_cooling'].sum() * 1.0 / 3.6e6
+    # e_dmpc = df_dmpc['P_cooling'].sum() * 1.0 / 3.6e6
     e_smpc = df_smpc['P_cooling'].sum() * 1.0 / 3.6e6
 
 
     print(f"Energía Termostato: {e_thermo:.4f} kWh")
-    print(f"Energía DMPC:       {e_dmpc:.4f} kWh")
+    # print(f"Energía DMPC:       {e_dmpc:.4f} kWh")
     print(f"Energía SMPC:       {e_smpc:.4f} kWh")

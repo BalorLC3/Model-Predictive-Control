@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from casadi_ode_solver import rk4_step_ca
 from sys_dynamics_casadi import SystemParameters
 from collections import deque
-from sklearn.cluster import KMeans
+from markov_chain import train_smart_markov
 
 class BaseController(ABC):
     @abstractmethod
@@ -47,69 +47,6 @@ class Thermostat(BaseController):
     # w_{comp,min} \le w_{comp}(k) \le w_{comp,max}
     # w_{pump,min} \le w_{pump}(k) \le w_{pump,max}
     # P_{batt,min} \le P_{batt}(k) \le P_{batt,max}
-    # SOC_{min}    \le SOC(k)      \le SOC_{max}
-        
-def train_smart_markov(power, velocity, dt, n_clusters=15):
-    """
-    Trains Transition Matrices based on Vehicle Dynamic Context.
-    Contexts:
-    0: Braking (a < -0.5 m/s2) -> Expect Regen
-    1: Traffic/Idle (v < 5 m/s) -> Expect Low Power
-    2: Cruising (v >= 5, low a) -> Expect Steady Power
-    3: Accelerating (a > 0.5)   -> Expect High Power
-    """
-    # 1. Cluster Power Data (1D K-Means)
-    X = power.reshape(-1, 1)
-    kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=17)
-    labels = kmeans.fit_predict(X)
-    centers = kmeans.cluster_centers_.flatten()
-    
-    # Sort centers to make physical sense (Low -> High)
-    sorted_idx = np.argsort(centers)
-    centers = centers[sorted_idx]
-    map_label = {old: new for new, old in enumerate(sorted_idx)}
-    mapped_labels = np.array([map_label[x] for x in labels])
-    
-    # 2. Calculate Acceleration
-    accel = np.diff(velocity, prepend=velocity[0]) / dt
-    
-    # 3. Build 4 Contextual Matrices
-    # Shape: [4 Contexts, From_State, To_State]
-    matrices = np.zeros((4, n_clusters, n_clusters))
-    
-    for k in range(len(mapped_labels) - 1):
-        curr_s = mapped_labels[k]
-        next_s = mapped_labels[k+1]
-        
-        v = velocity[k]
-        a = accel[k]
-        
-        # Classify Context
-        if a < -0.5:
-            ctx = 0 # Braking
-        elif v < 5.0:
-            ctx = 1 # Traffic/Idle
-        elif a > 0.5:
-            ctx = 3 # Accelerating
-        else:
-            ctx = 2 # Cruising
-            
-        matrices[ctx, curr_s, next_s] += 1
-        
-    # 4. Normalize (Row Stochastic)
-    for ctx in range(4):
-        row_sums = matrices[ctx].sum(axis=1, keepdims=True)
-        # Avoid division by zero; if row is empty, uniform prob or identity
-        # Here we leave it 0 but ensure we handle it or fill identity
-        matrices[ctx] = np.divide(matrices[ctx], row_sums, where=row_sums!=0)
-        
-        # Self-loop for unvisited states in a specific context to avoid numerical issues
-        for r in range(n_clusters):
-            if row_sums[r] == 0:
-                matrices[ctx, r, r] = 1.0
-                
-    return centers, matrices
-
 
 class DMPC(BaseController):
     def __init__(self, dt=1.0, T_des=32.5, horizon=20, alpha=1.0, avg_window=15):
@@ -270,7 +207,9 @@ class SMPC(BaseController):
     def __init__(self, driving_power, driving_velocity, dt=1.0, T_des=32.5, horizon=20, alpha=1.0, n_clusters=15):
         """
         SMPC (Expected Value).
-        Uses Contextual Markov Chain (Velocity/Accel aware) to predict Expected Power.
+        Uses Contextual Markov Chain (Velocity/Accel aware) to predict Expected Power. Note: Normally SMPC is classified in three, we
+        use Expected Value SMPC, which is not Chance-Constrained SMPC nor
+        Multiple-Scenario SMPC, which are heavier to compute
         """
         self.dt = dt
         self.N = horizon
@@ -289,6 +228,7 @@ class SMPC(BaseController):
         self.n_u = 2 * self.N
         self.n_slack = 2 * (self.N + 1)
 
+        # Constraints
         self.T_mins = np.array([30.0, 28.0]) 
         self.T_maxs = np.array([35.0, 34.0])
         self.w_mins = np.array([0.0, 0.0])   
@@ -348,8 +288,11 @@ class SMPC(BaseController):
         obj += self.alpha * (X[0, self.N] - self.T_des)**2
         
         # --- SAFETY BOX BOUNDS ---
-        lbx_X = np.tile([-np.inf, -np.inf, -np.inf], self.N + 1)
-        ubx_X = np.tile([np.inf, np.inf, np.inf], self.N + 1)
+        # Temp: -10 to 80 (Physics break down outside this)
+        x_min_safe = [-10.0, -10.0, -10.0]
+        x_max_safe = [80.0, 80.0, 10.0]
+        lbx_X = np.tile(x_min_safe, self.N + 1)
+        ubx_X = np.tile(x_max_safe, self.N + 1)
         
         lbx_U = np.tile(self.w_mins, self.N)
         ubx_U = np.tile(self.w_maxs, self.N)

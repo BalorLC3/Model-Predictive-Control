@@ -85,7 +85,7 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
     return best_costs.reshape(TB_N, TC_N), best_indices.reshape(TB_N, TC_N)
 
 # ... (Rest of functions: run_dp_offline, make_dp_controller_fn remain the same) ...
-def run_dp_offline(disturbances, params, dt=1.0, alpha=1.0, T_des=32.5):
+def run_dp_offline(disturbances, params, dt=1.0, alpha=1.0, T_des=33.0):
     """
     alpha: Terminal cost weight (set to 0.0 to match constraint-riding behavior)
     """

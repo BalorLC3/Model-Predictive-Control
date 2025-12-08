@@ -12,7 +12,23 @@ import os
 # ===============================================================
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS DEL VEHÍCULO ---
-
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "axes.labelsize": 13,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "axes.spines.top": True,
+    "axes.spines.right": True,
+    "axes.spines.left": True,
+    "axes.spines.bottom": True,
+    "figure.figsize": (6.0, 10.0),
+    "lines.linewidth": 1.4,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "grid.linestyle": "--",
+    "savefig.dpi": 300
+})
 # Parámetros para la conversión de unidades
 MPH_TO_MPS = 0.44704  # 1 milla por hora = 0.44704 metros por segundo
 
@@ -118,33 +134,27 @@ print(f"Número de puntos de datos después de duplicar: {len(p_driv_profile_dup
 # --- 4. VISUALIZACIÓN PARA VERIFICACIÓN ---
 
 # Crear un DataFrame extendido para visualización
-fig, axs = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+fig, axs = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
 
 # Gráfico 1: Perfil de Potencia Resultante (P_driv) - Duplicado
 axs[0].plot(time_duplicated, p_driv_profile_duplicated / 1000, 'r-') # en kW para mejor escala
-axs[0].set_title('Perfil de Potencia de Manejo (P_driv) - Dos Ciclos Consecutivos')
 axs[0].set_ylabel('Potencia (kW)')
 axs[0].grid(True)
-axs[0].axhline(0, color='k', linestyle='--', linewidth=0.8)
-axs[0].axvline(time_profile[-1], color='purple', linestyle='--', linewidth=1.5, alpha=0.7, label='Fin del primer ciclo')
-axs[0].text(500, 25, 'Propulsión', color='red')
-axs[0].text(500, -15, 'Frenado Regenerativo', color='red')
-axs[0].legend()
+axs[0].axhline(0, color='black', lw='1.5', ls='--')
+axs[0].text(500, 30, 'Propulsión', color='black')
+axs[0].text(500, -20, 'Frenado Regenerativo', color='black')
 
 # Gráfico 2: Perfil de Velocidad Duplicado
 axs[1].plot(time_duplicated, velocity_profile_duplicated, 'b-')
-axs[1].set_title('Perfil de Velocidad - Dos Ciclos Consecutivos')
 axs[1].set_ylabel('Velocidad (m/s)')
 axs[1].grid(True)
-axs[1].axvline(time_profile[-1], color='purple', linestyle='--', linewidth=1.5, alpha=0.7)
+axs[1].set_xlabel('Tiempo (s)')
 
-# Gráfico 3: Perfil de Velocidad en mph (para referencia)
-axs[2].plot(time_duplicated, velocity_profile_duplicated / MPH_TO_MPS, 'g-')
-axs[2].set_title('Perfil de Velocidad en mph - Dos Ciclos Consecutivos')
-axs[2].set_ylabel('Velocidad (mph)')
-axs[2].set_xlabel('Tiempo (s)')
-axs[2].grid(True)
-axs[2].axvline(time_profile[-1], color='purple', linestyle='--', linewidth=1.5, alpha=0.7)
+# # Gráfico 3: Perfil de Velocidad en mph (para referencia)
+# axs[2].plot(time_duplicated, velocity_profile_duplicated / MPH_TO_MPS, 'g-')
+# axs[2].set_ylabel('Velocidad (mph)')
+# axs[2].set_xlabel('Tiempo (s)')
+# axs[2].grid(True)
 
 plt.tight_layout()
 

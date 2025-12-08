@@ -22,7 +22,7 @@ if __name__ == "__main__":
     dist = jnp.hstack([data.reshape(-1,1), jnp.full((N,1), 40.0)])
     params = SystemParameters()
     
-    policy_cube = run_dp_offline(dist, params, alpha=0.02)
+    policy_cube = run_dp_offline(dist, params, alpha=0.05)
     
     dp_ctrl_fn = make_dp_controller_fn(policy_cube)
     

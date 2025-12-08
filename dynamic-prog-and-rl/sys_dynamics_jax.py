@@ -77,6 +77,7 @@ class BatteryThermalSystem:
         
         # Unpack diagnostics for plotting 
         # Order matches jax_ode_solver.py return
+
         self.diagnostics = {
             'P_cooling': diag_vec[0],
             'P_batt_total': diag_vec[1],
@@ -85,7 +86,7 @@ class BatteryThermalSystem:
             'Q_gen': diag_vec[4],
             'Q_cool': diag_vec[5],
             'm_clnt_dot': diag_vec[6],
-            'T_chilled': diag_vec[7]
+            'P_comp_elec': diag_vec[7]
         }
         
         return self.state, self.diagnostics
