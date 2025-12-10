@@ -14,11 +14,12 @@ plt.rcParams.update({
     "axes.spines.right": True,
     "axes.spines.left": True,
     "axes.spines.bottom": True,
-    "figure.figsize": (6.0, 10.0),
+    "figure.figsize": (6.0, 10.0), # use (4.0, 10.0) for side by side in A4 paper
     "lines.linewidth": 1.4,
     "axes.grid": True,
     "grid.alpha": 0.25,
-    "grid.linestyle": "--"
+    "grid.linestyle": "--",
+    "savefig.dpi": 300
 })
 
 def plot_signal(x, y, ylabel='', xlabel='Time (s)', color='b'):

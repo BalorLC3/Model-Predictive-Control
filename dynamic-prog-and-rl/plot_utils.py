@@ -18,7 +18,8 @@ plt.rcParams.update({
     "lines.linewidth": 1.4,
     "axes.grid": True,
     "grid.alpha": 0.25,
-    "grid.linestyle": "--"
+    "grid.linestyle": "--",
+    "savefig.dpi": 300
 })
 
 def plot_signal(x, y, ylabel='', xlabel='Time (s)', color='b'):

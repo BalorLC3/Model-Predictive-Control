@@ -230,7 +230,7 @@ if __name__ == "__main__":
         p_data,
         v_data,
         dt=1.0,
-        n_clusters=16,
+        n_clusters=4,
         accel_window=5,
         acc_thresh=0.5,
         brake_thresh=-0.6,
@@ -239,7 +239,8 @@ if __name__ == "__main__":
     print("Cluster centers (kW):", np.round(centers / 1000.0, 2))
     plot_markov_matrices(matrices, centers)
     print_matrix_diagnostics(matrices)
-
     ctx, accel = context_trace(v_data, dt=1.0, accel_window=5, acc_thresh=0.5, brake_thresh=-0.6)
     unique, counts = np.unique(ctx, return_counts=True)
     print("Context counts:", dict(zip(unique, counts)))
+    print(matrices)
+

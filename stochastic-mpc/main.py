@@ -32,24 +32,24 @@ if __name__ == "__main__":
     
     df_thermo = run_simulation(env_thermo, ctrl_thermo, config)
     
-    # plot_results(df_thermo)
+    plot_results(df_thermo)
 
-    
+    plt.show()
     # ==========================================
     # SIMULACIÓN NMPC (DETERMINISTA)
     # ==========================================
-    # print("\n--- Ejecutando DMPC ---")    
-    # ctrl_DMPC = DMPC(
-    #     dt=1.0, 
-    #     T_des=T_des,
-    #     horizon=horizon,     # Before horizon 5
-    #     alpha=0.065,
-    #     avg_window=15
-    # )
-    # env_dmpc = BatteryThermalSystem(init_state, params)    
-    # df_dmpc = run_simulation(env_dmpc, ctrl_DMPC, config)
-    # plot_results(df_dmpc, 'dmpc')
-    
+    print("\n--- Ejecutando DMPC ---")    
+    ctrl_DMPC = DMPC(
+        dt=1.0, 
+        T_des=T_des,
+        horizon=horizon,     # Before horizon 5
+        alpha=0.065,
+        avg_window=15
+    )
+    env_dmpc = BatteryThermalSystem(init_state, params)    
+    df_dmpc = run_simulation(env_dmpc, ctrl_DMPC, config)
+    plot_results(df_dmpc, 'dmpc')
+
     # ==========================================
     # SIMULACIÓN SMPC (ESTOCASTICO)
     # ==========================================
@@ -67,6 +67,9 @@ if __name__ == "__main__":
     env_smpc = BatteryThermalSystem(init_state, params)
     df_smpc = run_simulation(env_smpc, ctrl_SMPC, config)
     plot_results(df_smpc, 'smpc')
+
+
+    # Unique plot show
     plt.show()
 
     # ==========================================
@@ -74,10 +77,10 @@ if __name__ == "__main__":
     # ==========================================
     print("\nGenerando comparativa...")    
     e_thermo = df_thermo['P_cooling'].sum() * 1.0 / 3.6e6
-    # e_dmpc = df_dmpc['P_cooling'].sum() * 1.0 / 3.6e6
+    e_dmpc = df_dmpc['P_cooling'].sum() * 1.0 / 3.6e6
     e_smpc = df_smpc['P_cooling'].sum() * 1.0 / 3.6e6
 
 
     print(f"Energía Termostato: {e_thermo:.4f} kWh")
-    # print(f"Energía DMPC:       {e_dmpc:.4f} kWh")
+    print(f"Energía DMPC:       {e_dmpc:.4f} kWh")
     print(f"Energía SMPC:       {e_smpc:.4f} kWh")
