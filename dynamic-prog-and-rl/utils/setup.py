@@ -2,7 +2,7 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
-from jax_ode_solver import rk4_step
+from system.jax_ode_solver import rk4_step
 
 @partial(jax.jit, static_argnames=['dt', 'controller'])
 def run_simulation(init_state_vec, controller, disturbances_array, params, dt):

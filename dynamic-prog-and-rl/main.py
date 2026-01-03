@@ -1,63 +1,77 @@
-import matplotlib.pyplot as plt
+# All time modules
 import numpy as np
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import pandas as pd
-import time
+# Own modules
+from system.sys_dynamics_jax import SystemParameters
+from controllers.dynamic_programming import run_dp_offline, make_dp_controller_fn
+from controllers.thermostat import thermostat_logic_jax
+from utils.setup import run_simulation
+from utils.plot_funs import plot_results
 
-from sys_dynamics_jax import SystemParameters
-from setup import run_simulation
-from plot_utils import plot_results
-from thermostat import thermostat_logic_jax # Assuming you saved it here
-
-if __name__ == "__main__":
-    # 1. Data Loading
-    try: 
-        raw_data = np.load('driving_energy.npy', mmap_mode='r')
-        driving_data = jnp.array(raw_data)
-        print("Driving cycle loaded.")
-    except:
-        print("Using synthetic data.")
-        t_synth = jnp.arange(0, 2740)
-        driving_data = jnp.abs(jnp.sin(t_synth/50.0)) * 20000.0
-
-    # 2. Prepare Inputs
-    N = len(driving_data)
-    T_amb_seq = jnp.full((N, 1), 40.0) # 40°C Ambient
-    P_driv_seq = driving_data.reshape(-1, 1)
-    
-    # Shape (N, 2)
-    disturbances_array = jnp.hstack([P_driv_seq, T_amb_seq])
-
-    # 3. Setup System
-    params = SystemParameters()
-    init_state = jnp.array([30.0, 30.0, 0.8])
-
-    # 4. Run (Compilation happens here on first run)
-    print("Simulation Thermostat Jax")
-    start = time.time()
-    history = run_simulation(init_state, thermostat_logic_jax, disturbances_array, params, 1.0)
-    print(f"Done in {time.time()-start:.2f}s")
-    
-    # Force computation and move to CPU for plotting
-    # (Pandas prefers numpy arrays over JAX device arrays)
-    state_hist = np.array(history['state'])
-    ctrl_hist = np.array(history['controls'])
-    diag_matrix = np.array(history['diagnostics'])
-    
-    # 5. Process Results
-    results = {
+def show_results(
+        controller_name,
+        N, 
+        states_hist, 
+        ctrl_hist, 
+        diag_hist
+    ):
+    df = pd.DataFrame({
         'time': np.arange(N),
-        'T_batt': state_hist[:, 0],
-        'T_clnt': state_hist[:, 1],
+        # Estados
+        'T_batt': states_hist[:, 0],
+        'T_clnt': states_hist[:, 1],
+        # Controles
         'w_comp': ctrl_hist[:, 0],
         'w_pump': ctrl_hist[:, 1],
-        'P_cooling': diag_matrix[:, 0],
-        'Q_gen': diag_matrix[:, 4],
-        'Q_cool': diag_matrix[:, 5],
-    }
+        # Diagnósticos 
+        'P_cooling': diag_hist[:, 0],
+        'Q_gen':     diag_hist[:, 4],
+        'Q_cool':    diag_hist[:, 5]
+    })
     
-    df = pd.DataFrame(results)
+    print(f"Total Energy: {(df['P_cooling'].sum()/1000):.4f} kJ")
     
-    print("Plotting...")
-    plot_results(df)
+    plot_results(df, controller_name)
     plt.show()
+
+
+if __name__ == "__main__":
+    # ===============================================================
+    # SETUP (N, data, disturbances and parameters)
+    # ===============================================================
+    try:
+        raw = np.load('driving_energy.npy', mmap_mode='r')
+        data = jnp.array(raw)
+        print("Driving cycle loaded.")
+    except:
+        data = jnp.abs(jnp.sin(jnp.arange(600)/50.0)) * 20000.0
+    N = len(data)
+    dist = jnp.hstack([data.reshape(-1,1), jnp.full((N,1), 40.0)])
+    params = SystemParameters()
+    
+    # ===============================================================
+    # CONTROLLER 
+    # ===============================================================
+    controller_name = "thermostat"
+    T_des = 33
+
+    if controller_name == "dp":
+        policy_cube = run_dp_offline(dist, params, alpha=0.05, T_des=T_des)
+        controller_func = make_dp_controller_fn(policy_cube)
+    elif controller_name == "thermostat":
+        controller_func = thermostat_logic_jax
+    # ===============================================================
+    # SHARED FUNS (initial state and always must yield history)
+    # ===============================================================
+    init_state = jnp.array([30.0, 30.0, 0.8])
+    history = run_simulation(init_state, controller_func, dist, params, 1.0)
+    # ===============================================================
+    # RESULTS 
+    # ===============================================================
+    states_hist = np.array(history['state'])
+    ctrl_hist = np.array(history['controls'])
+    diag_hist = np.array(history['diagnostics'])
+    
+    show_results(controller_name, N, states_hist, ctrl_hist, diag_hist)

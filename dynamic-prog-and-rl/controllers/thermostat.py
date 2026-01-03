@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-def thermostat_logic_jax(state, prev_carry, k, params):
+def thermostat_logic_jax(state, prev_carry, T_des, k, params):
     """
     Implements Thermostat with Hysteresis in pure JAX.
     Signature matches the Universal Runner used for DP.
@@ -20,7 +20,7 @@ def thermostat_logic_jax(state, prev_carry, k, params):
     cooling_state_prev = prev_carry 
     
     # 2. Thresholds
-    T_upper = 34.0
+    T_upper = T_des
     T_lower = 32.5
     
     # 3. Hysteresis Logic

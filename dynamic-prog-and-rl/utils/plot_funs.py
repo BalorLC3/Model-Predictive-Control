@@ -5,11 +5,12 @@ import os
 from pathlib import Path
 
 plt.rcParams.update({
-    "text.usetex": True,
-    "font.family": "serif",
-    "axes.labelsize": 13,
-    "xtick.labelsize": 12,
-    "ytick.labelsize": 12,
+    "text.usetex": False,
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Microsoft YaHei"], # Change this to tex True & unicode to True
+    "axes.labelsize": 12,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
     "axes.spines.top": True,
     "axes.spines.right": True,
     "axes.spines.left": True,
@@ -28,6 +29,7 @@ def plot_signal(x, y, ylabel='', xlabel='Time (s)', color='b'):
     plt.ylabel(ylabel)
     plt.xlabel(xlabel)
     plt.grid(True)
+    plt.show()
     
 def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argument
     time = df_controller['time']
@@ -44,26 +46,26 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
 
     # --- 1. Heat Transfer ---
     axs[0].plot(time, Q_cool, 'b', lw=1.5)
-    axs[0].set_ylabel(r'Heat Removed' + '\n' + r'($\dot{Q}_{cool}$) [W]') 
+    axs[0].set_ylabel(r'Calor Removido' + '\n' + r'($\dot{Q}_{cool}$) [W]') 
     axs[0].set_xlim(0, len(time))
     axs[0].set_ylim(0, 2000)
     
     # --- 2. Pump Speed ---
     axs[1].plot(time, w_pump, 'r')
-    axs[1].set_ylabel(r'Pump Speed' + '\n' + r'($\omega_{pump}$) [RPM]')
+    axs[1].set_ylabel(r'Vel. Bomba' + '\n' + r'($\omega_{pump}$) [RPM]')
     axs[1].set_xlim(0, len(time))
     axs[1].set_ylim(0, 10000)
 
     # --- 3. Compressor Speed ---
     axs[2].plot(time, w_comp, 'k')
-    axs[2].set_ylabel(r'Comp Speed' + '\n' + r'($\omega_{comp}$) [RPM]')
+    axs[2].set_ylabel(r'Vel. Compresor' + '\n' + r'($\omega_{comp}$) [RPM]')
     axs[2].set_xlim(0, len(time))
     axs[2].set_ylim(0, 10000)
     
     # --- 4. Temperatures ---
     axs[3].plot(time, T_batt, 'r', label='Battery ($T_{batt}$)')
     axs[3].plot(time, T_clnt, 'b--', label='Coolant ($T_{clnt}$)')
-    axs[3].set_ylabel('Temperature\n[$^\circ$C]')
+    axs[3].set_ylabel(r'Temperatura' + '\n' + r'($T$) [$^\circ$C]')
     axs[3].legend(loc='upper left', frameon=True) 
     axs[3].set_xlim(0, len(time))
     axs[3].set_ylim(28, 35)
@@ -73,12 +75,17 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     energy_cooling_kJ = np.cumsum(P_cooling) * dt * joules_to_kJ
     
     axs[4].plot(time, energy_cooling_kJ, 'g')
-    axs[4].set_xlabel('Time (s)')
-    axs[4].set_ylabel('Cooling Energy\nConsumed [kJ]')
+    axs[4].set_xlabel('Tiempo (s)')
+    axs[4].set_ylabel('Energia de Enf.' + '\n' + r'($P_{cool}$) [kJ]')
     axs[4].grid(True, which='both')
     axs[4].set_xlim(0, len(time))
     axs[4].set_ylim(0, 400)
 
     save_dir = Path(r"C:\Users\super\Desktop\Vasudeva\Manifold\engineering\predictive-control\xresults_btm")    
     save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f"{name}_controller.pdf", bbox_inches='tight')
+    plt.savefig(save_dir / f"{name}_controller.png", bbox_inches='tight', dpi=300)
+    plt.show()
+
+def plot_times():
+    """Generic function to plot computation times from a CSV log file."""
+    ...

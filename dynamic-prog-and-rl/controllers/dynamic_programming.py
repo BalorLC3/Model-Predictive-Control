@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
-from jax_ode_solver import rk4_step
+from system.jax_ode_solver import rk4_step
 import time
 
 # --- 1. CONFIGURATION ---
@@ -43,16 +43,16 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
     def evaluate_state_action(state, action):
         next_state, diag = rk4_step(state, action, disturbance, params, dt)
         
-        # --- 1. Energy Cost (kJ = kW * s) ---
+        # 1. Energy Cost (kJ = kW * s) 
         # Matching SMPC: (P_batt + P_comp) * dt
         # diag[1] is P_batt (W), diag[7] is P_comp (W) -> (W + W)/1000 = kW
         P_total_kW = (diag[1] + diag[7]) / 1000.0 
         energy_cost = P_total_kW * (dt / 3600.0)
 
-        # --- 2. Soft Constraint Penalty (Slack) ---
+        # 2. Soft Constraint Penalty (Slack) 
         # Violation = max(0, T - T_max) + max(0, T_min - T)
         # Using softplus or relu for differentiability isn't needed in DP (discrete lookup), 
-        # but jnp.maximum is fast.
+        # jnp.maximum is fast.
         T_next = next_state[0]
         
         viol_upper = jnp.maximum(0.0, T_next - T_LIMIT_MAX)
@@ -64,7 +64,7 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
 
         stage_cost = energy_cost + slack_cost
 
-        # --- 3. Future Cost (Interpolation) ---
+        # 3. Future Cost (Interpolation) 
         coords = get_normalized_coords(next_state[0], next_state[1])
         future_cost = jax.scipy.ndimage.map_coordinates(
             cost_to_go_next, coords, order=1, mode='nearest'
@@ -84,7 +84,6 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
     
     return best_costs.reshape(TB_N, TC_N), best_indices.reshape(TB_N, TC_N)
 
-# ... (Rest of functions: run_dp_offline, make_dp_controller_fn remain the same) ...
 def run_dp_offline(disturbances, params, dt=1.0, alpha=1.0, T_des=33.0):
     """
     alpha: Terminal cost weight (set to 0.0 to match constraint-riding behavior)
@@ -110,7 +109,6 @@ def run_dp_offline(disturbances, params, dt=1.0, alpha=1.0, T_des=33.0):
     return jnp.stack(policy_history[::-1]) 
 
 def make_dp_controller_fn(policy_cube):
-    # This remains identical to your previous code
     def dp_controller(state, carry, k, params):
         coords = get_normalized_coords(state[0], state[1])
         policy_at_k = policy_cube[k]

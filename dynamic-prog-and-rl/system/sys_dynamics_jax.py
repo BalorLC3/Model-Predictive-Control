@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax_ode_solver import rk4_step
+from system.jax_ode_solver import rk4_step
 import jax.tree_util
 
 class SystemParameters:
