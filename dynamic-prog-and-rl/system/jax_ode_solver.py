@@ -128,7 +128,7 @@ def battery_dynamics_ode(state, controls, disturbances, params):
 
     # Diagnostic vector (Optional: returned as auxiliary data)
     diagnostics = jnp.array([
-        P_cooling, P_batt_total, V_oc_pack, I_batt, Q_gen, Q_cool, m_clnt_dot, P_comp_elec # Last two for the cost function
+        P_cooling, P_batt_total, V_oc_pack, I_batt, Q_gen, Q_cool, m_clnt_dot, P_comp_elec, P_pump_elec # Last two for the cost function
     ])
 
     return jnp.array([dT_batt_dt, dT_clnt_dt, dSOC_dt]), diagnostics

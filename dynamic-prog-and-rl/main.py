@@ -1,41 +1,34 @@
 # All time modules
 import numpy as np
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
-import pandas as pd
 # Own modules
 from system.sys_dynamics_jax import SystemParameters
 from controllers.dynamic_programming import run_dp_offline, make_dp_controller_fn
 from controllers.thermostat import thermostat_logic_jax
+from controllers.sac import SBXActor
 from utils.setup import run_simulation
-from utils.plot_funs import plot_results
+from utils.plot_funs import show_results
+from src.env_batt import ObservationConfig
 import pickle
 
-def show_results(
-        controller_name,
-        N, 
-        states_hist, 
-        ctrl_hist, 
-        diag_hist
-    ):
-    df = pd.DataFrame({
-        'time': np.arange(N),
-        # Estados
-        'T_batt': states_hist[:, 0],
-        'T_clnt': states_hist[:, 1],
-        # Controles
-        'w_comp': ctrl_hist[:, 0],
-        'w_pump': ctrl_hist[:, 1],
-        # Diagnósticos 
-        'P_cooling': diag_hist[:, 0],
-        'Q_gen':     diag_hist[:, 4],
-        'Q_cool':    diag_hist[:, 5]
-    })
+# Mean: [T_b, T_c, SOC, P_driv, T_amb]
+obs_config = ObservationConfig()
     
-    print(f"Total Energy: {(df['P_cooling'].sum()/1000):.4f} kJ")
+def get_obs(state, disturbance):
+    raw = jnp.concatenate([state, disturbance])
+    return (raw - obs_config.obs_mean) / obs_config.obs_scale
+
+def inference_fn(state, carry, k, params):
+    """Model - free, it does not interact with the parameters of the system but with the actions"""
+    d_curr = dist[k]
+    obs = get_obs(state, d_curr)
     
-    plot_results(df, controller_name)
-    plt.show()
+    mean = actor.apply(params_nn, obs)
+    action = jnp.tanh(mean)
+    
+    controls = (action + 1.0) * 2500.0
+    
+    return controls, carry
 
 
 if __name__ == "__main__":
@@ -43,27 +36,40 @@ if __name__ == "__main__":
     # SETUP (N, data, disturbances and parameters)
     # ===============================================================
     try:
-        raw = np.load('driving_energy.npy', mmap_mode='r')
+        raw = np.load('data/driving_energy.npy', mmap_mode='r')
         data = jnp.array(raw)
         print("Driving cycle loaded.")
     except:
+        print("Loading of driving cycle failed, using fallback data.")
         data = jnp.abs(jnp.sin(jnp.arange(600)/50.0)) * 20000.0
     N = len(data)
     dist = jnp.hstack([data.reshape(-1,1), jnp.full((N,1), 40.0)])
     params = SystemParameters()
-    
     # ===============================================================
     # CONTROLLER 
     # ===============================================================
-    controller_name = "ppo"
+    controller_name = "sac"
 
     if controller_name == "dp":
-        policy_cube = run_dp_offline(dist, params, alpha=0.05)
+        policy_cube = run_dp_offline(dist, params, alpha=100.0)
         controller_func = make_dp_controller_fn(policy_cube)
     elif controller_name == "thermostat":
         controller_func = thermostat_logic_jax
-    elif controller_name == "ppo":
-        ...
+    elif controller_name == "sac":
+            with open('results/sac_actor_weights.pkl', 'rb') as f:
+                params_nn = pickle.load(f)
+                
+            actor = SBXActor(n_actions=2)
+            
+            controller_func = inference_fn
+    elif controller_name == "tqc":
+            with open('results/tqc_actor_weights.pkl', 'rb') as f:
+                params_nn = pickle.load(f)
+                
+            actor = SBXActor(n_actions=2)
+            
+            controller_func = inference_fn
+
     # ===============================================================
     # SHARED FUNCTIONALITIES (initial state and always must yield history)
     # ===============================================================

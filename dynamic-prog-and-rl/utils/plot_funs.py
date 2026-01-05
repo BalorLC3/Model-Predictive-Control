@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import os
 from pathlib import Path
 
 plt.rcParams.update({
@@ -86,6 +85,38 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     plt.savefig(save_dir / f"{name}_controller.png", bbox_inches='tight', dpi=300)
     plt.show()
 
+def show_results(
+        controller_name,
+        N, 
+        states_hist, 
+        ctrl_hist, 
+        diag_hist
+    ):
+    df = pd.DataFrame({
+        'time': np.arange(N),
+        # Estados
+        'T_batt': states_hist[:, 0],
+        'T_clnt': states_hist[:, 1],
+        # Controles
+        'w_comp': ctrl_hist[:, 0],
+        'w_pump': ctrl_hist[:, 1],
+        # Diagnósticos 
+        'P_cooling': diag_hist[:, 0],
+        'Q_gen':     diag_hist[:, 4],
+        'Q_cool':    diag_hist[:, 5]
+    })
+    
+    print(f"Total Energy: {(df['P_cooling'].sum()/1000):.4f} kJ")
+    print(f"Final T_batt: \n{df[['time','T_batt']].tail(3)}K")
+    
+    plot_results(df, controller_name)
+
 def plot_times():
     """Generic function to plot computation times from a CSV log file."""
     ...
+
+
+        
+
+
+        

@@ -4,7 +4,7 @@ from functools import partial
 from system.jax_ode_solver import rk4_step
 import time
 
-# --- 1. CONFIGURATION ---
+# --- GRID CONFIGURATION ---
 TB_MIN_GRID, TB_MAX_GRID, TB_N = 25.0, 45.0, 51   # The GRID limits
 TC_MIN_GRID, TC_MAX_GRID, TC_N = 20.0, 40.0, 41
 
@@ -12,14 +12,14 @@ TB_GRID = jnp.linspace(TB_MIN_GRID, TB_MAX_GRID, TB_N)
 TC_GRID = jnp.linspace(TC_MIN_GRID, TC_MAX_GRID, TC_N)
 
 # Action Space
-W_COMP_OPTS = jnp.linspace(0.0, 10000.0, 8)
-W_PUMP_OPTS = jnp.linspace(0.0, 10000.0, 8)
+W_COMP_OPTS = jnp.linspace(0.0, 10000.0, 10)
+W_PUMP_OPTS = jnp.linspace(0.0, 10000.0, 10)
 U_GRID = jnp.dstack(jnp.meshgrid(W_COMP_OPTS, W_PUMP_OPTS)).reshape(-1, 2)
 
-# --- CONSTRAINT CONFIG (Matching SMPC) ---
+# --- CONSTRAINT CONFIG  ---
 T_LIMIT_MIN = 30.0
 T_LIMIT_MAX = 35.0
-RHO_SOFT = 0.2     # Same penalty weight as SMPC
+RHO_SOFT = 800    # Penalty weight
 
 def get_normalized_coords(T_batt, T_clnt):
     """Convert physical Temp to grid coordinates (0.0 to N-1.0)"""
@@ -42,27 +42,13 @@ def bellman_update(cost_to_go_next, disturbance, params, dt):
 
     def evaluate_state_action(state, action):
         next_state, diag = rk4_step(state, action, disturbance, params, dt)
-        
         # 1. Energy Cost (kJ = kW * s) 
-        # Matching SMPC: (P_batt + P_comp) * dt
-        # diag[1] is P_batt (W), diag[7] is P_comp (W) -> (W + W)/1000 = kW
-        P_total_kW = (diag[1] + diag[7]) / 1000.0 
-        energy_cost = P_total_kW * (dt / 3600.0)
+        # diag[8] is P_pump (W), diag[7] is P_comp (W) -> (W + W)/1000 = kW
+        P_total_kW = (diag[8] + diag[7]) / 1000.0 
+        energy_cost = P_total_kW * dt
 
-        # 2. Soft Constraint Penalty (Slack) 
-        # Violation = max(0, T - T_max) + max(0, T_min - T)
-        # Using softplus or relu for differentiability isn't needed in DP (discrete lookup), 
-        # jnp.maximum is fast.
-        T_next = next_state[0]
-        
-        viol_upper = jnp.maximum(0.0, T_next - T_LIMIT_MAX)
-        viol_lower = jnp.maximum(0.0, T_LIMIT_MIN - T_next)
-        
-        # Slack Cost = rho * (S^2)
-        # Note: In SMPC we had separate slacks S_up and S_low.
-        slack_cost = RHO_SOFT * (viol_upper**2 + viol_lower**2)
-
-        stage_cost = energy_cost + slack_cost
+        # Soft Constraint Penalty (Slack) 
+        stage_cost = energy_cost 
 
         # 3. Future Cost (Interpolation) 
         coords = get_normalized_coords(next_state[0], next_state[1])
