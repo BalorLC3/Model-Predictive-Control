@@ -5,7 +5,7 @@ from system.efficiency_jax import (get_volumetric_eff, get_isentropic_eff, get_m
 from system.battery_models_jax import get_ocv_jax, get_rbatt_jax, get_cnom_jax, get_dvdt_jax
 
 # ===============================================================
-# 1. PURE PHYSICS ODE (Stateless)
+# PURE PHYSICS ODE (Stateless)
 # ===============================================================
 def battery_dynamics_ode(state, controls, disturbances, params):
     """
@@ -134,7 +134,7 @@ def battery_dynamics_ode(state, controls, disturbances, params):
     return jnp.array([dT_batt_dt, dT_clnt_dt, dSOC_dt]), diagnostics
 
 # ===============================================================
-# 2. RUNGE-KUTTA 4 INTEGRATOR
+# RUNGE-KUTTA 4 INTEGRATOR
 # ===============================================================
 @jax.jit
 def rk4_step(state, controls, disturbances, params_tuple, dt):

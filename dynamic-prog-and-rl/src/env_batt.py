@@ -51,7 +51,7 @@ class BatteryCoolingEnv(gym.Env):
         super().reset(seed=seed)
         
         # Initialize State [T_batt, T_clnt, SOC]
-        base_temp = np.random.uniform(28.0, 34.5) 
+        base_temp = np.random.uniform(29.0, 34.0) 
         self.state = jnp.array([base_temp, base_temp, 0.8])
         
         # Random start time in the driving cycle (Data Augmentation)
@@ -91,8 +91,8 @@ class BatteryCoolingEnv(gym.Env):
     @staticmethod
     @jax.jit
     def _core_logic(state, action, disturbance, params, dt):
-        # Map Action [-1, 1] -> [0, 5000] RPM
-        controls = (jnp.tanh(action) + 1.0) * 2500.0
+        # Map Action [-1, 1] -> [0, 10,000] RPM
+        controls = (jnp.tanh(action) + 1.0) * 5000.0
         
         # Physics Step
         next_state, diag = rk4_step(state, controls, disturbance, params, dt)
@@ -102,20 +102,24 @@ class BatteryCoolingEnv(gym.Env):
         # Minimize Cooling Power (Index 0)
         # diag[8] is P_pump (W), diag[7] is P_comp (W) -> (W + W)/1000 = kW.
         # diag[0] is P_cool = P_pump + P_comp
-        P_cool_kW = diag[0] / 1000.0
+        lamb = 20.0
+        P_cool_kW = diag[0] / 1000.0 * lamb
+
         cost_energy = P_cool_kW * dt  # in kWh
         
         # Penalty Weight
         T_des = 33.0
-        T_MAX = 34.5
-        T_MIN = 30.0
+        T_MAX = 35.0
+        T_MIN = 15.0
         
         viol_up = jnp.maximum(0.0, T_next - T_MAX)
         viol_low = jnp.maximum(0.0, T_MIN - T_next)
 
         total_viol = viol_up + viol_low
-        cost_constraint = 20.0 * (total_viol ** 2)
-        cost_des = 0.03 * (T_next - T_des)**2 
+        beta = 200.0
+        cost_constraint = beta * (total_viol ** 2)
+        alpha = 0.02
+        cost_des = alpha * (T_next - T_des)**2 
 
         reward = -(cost_constraint + cost_energy + cost_des)
         

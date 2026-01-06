@@ -26,7 +26,7 @@ def inference_fn(state, carry, k, params):
     mean = actor.apply(params_nn, obs)
     action = jnp.tanh(mean)
     
-    controls = (action + 1.0) * 2500.0
+    controls = (action + 1.0) * 5000.0
     
     return controls, carry
 
@@ -56,7 +56,8 @@ if __name__ == "__main__":
     elif controller_name == "thermostat":
         controller_func = thermostat_logic_jax
     elif controller_name == "sac":
-            with open('results/sac_actor_weights.pkl', 'rb') as f:
+            print("Executing learned model SAC:", controller_name)
+            with open(f'results/{controller_name}_actor_weights.pkl', 'rb') as f:
                 params_nn = pickle.load(f)
                 
             actor = SBXActor(n_actions=2)
