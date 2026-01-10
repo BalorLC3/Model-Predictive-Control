@@ -111,7 +111,7 @@ class TrainExport:
         self.model = model
         self.env = env
         self.path_prefix = path_prefix
-        os.makedirs(os.path.dirname(path_prefix) if os.path.dirname(path_prefix) else '.', exist_ok=True)
+        os.makedirs(self.path_prefix, exist_ok=True)
 
     def train(self, total_timesteps: int, **kwargs):
         print(f"Starting Training ({total_timesteps} steps)...")
@@ -133,18 +133,18 @@ class TrainExport:
 
     def _save_artifacts(self, callback):
         # Save Model
-        self.model.save(f"{self.path_prefix}.zip")
+        self.model.save(f"{self.path_prefix}/model.zip")
         
         # Save JAX Weights
         if hasattr(self.model.policy, 'actor_state'):
-            with open(f"{self.path_prefix}_actor_weights.pkl", 'wb') as f:
+            with open(f"{self.path_prefix}/actor_weights.pkl", 'wb') as f:
                 pickle.dump(self.model.policy.actor_state.params, f)
-                print(f"Weights saved at {self.path_prefix}_actor_weights.pkl")
+                print(f"Weights saved at {self.path_prefix}/actor_weights.pkl")
 
         # Save History
-        with open(f"{self.path_prefix}_history.pkl", 'wb') as f:
+        with open(f"{self.path_prefix}/history.pkl", 'wb') as f:
             pickle.dump(callback.history, f)
-            print(f"History saved at {self.path_prefix}_history.pkl")
+            print(f"History saved at {self.path_prefix}/history.pkl")
 
     def plot_kpis(self, history):
         """Plots Energy, Temperature, and Reward per Episode"""
@@ -165,5 +165,5 @@ class TrainExport:
         
         
         plt.tight_layout()
-        plt.savefig(f"{self.path_prefix}_metrics.png")
+        plt.savefig(f"{self.path_prefix}/metrics.png")
         plt.show()

@@ -9,7 +9,7 @@ from controllers.thermostat import thermostat_logic_jax
 from controllers.sac import SBXActor
 from utils.setup import run_simulation, load_driving_cycle
 from utils.performance import time_total_simulation
-from utils.plot_funs import show_results, plot_times_consumption # <- bar plot
+from utils.plot_funs import show_results 
 from src.env_batt import ObservationConfig
 import pickle
 
@@ -25,7 +25,7 @@ def make_controller(controller_name, dist, params, horizon):
         return thermostat_logic_jax, {}
 
     if controller_name.startswith("sac"):
-        with open(f"results/{controller_name}_actor_weights.pkl", "rb") as f:
+        with open(f"results/{controller_name}/actor_weights.pkl", "rb") as f:
             params_nn = pickle.load(f)
 
         actor = SBXActor(n_actions=2)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # ---------------------------------------------------------------
     # Setup
     # ---------------------------------------------------------------
-    controller_name = "thermostat"
+    controller_name = "sac_h10"; horizon = 10
     dt = 1.0
 
     dist = load_driving_cycle()
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         controller_name,
         dist,
         params,
-        10
+        horizon
     )
 
     # ---------------------------------------------------------------

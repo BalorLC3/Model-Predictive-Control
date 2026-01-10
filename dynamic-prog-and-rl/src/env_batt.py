@@ -144,7 +144,7 @@ class BatteryCoolingEnv(gym.Env):
         # Only apply this cost at the very last step
         cost_temp_deviation = ((T_next - T_des) / MAX_TEMP_DEVIATION)**2
         w_energy = 20.0
-        w_temp = 3.0 # Or 3.0 for less importance 
+        w_temp = 3.0 # 5.0, or 3.0 for less importance 
         w_constraint = 2.0
 
         total_cost = (
