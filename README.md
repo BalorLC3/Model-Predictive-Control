@@ -20,7 +20,7 @@ Model-Preditive-Control_Battery-Management-System
 └── results_btm
 ```
 ## Results
-| Thermostat |  SMPC  |   SAC   |
-|------------|--------|---------|
-| ![Thermostat](xresults_btm/thermostat_controller.png) |  ![SMPC](xresults_btm/smpc_controller.png) ![SAC](sac_h0_controller.png) | ![SAC](xresults_btm/sac_h0_controller.png) |
+| Thermostat | SMPC | SAC |
+|------------|------|-----|
+| <img src="xresults_btm/thermostat_controller.png" width="200" alt="Thermostat Controller"><br>*Baseline controller* | <img src="xresults_btm/smpc_controller.png" width="200" alt="SMPC Controller"><br>*Stochastic MPC* | <img src="xresults_btm/sac_h0_controller.png" width="200" alt="SAC Controller"><br>*Soft Actor-Critic* |
 
