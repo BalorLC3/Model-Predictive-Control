@@ -2,7 +2,7 @@ import numpy as np
 import casadi as ca
 
 # ===============================================================
-# MÓDULO DE MODELOS DE BATERÍA (HÍBRIDO: SCIPY + CASADI)
+# MoDULO DE MODELOS DE BATERiA 
 # ===============================================================
 
 # --- PARÁMETROS GLOBALES ---
