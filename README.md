@@ -10,12 +10,17 @@ All control strategies were made for a high fidelity BTMS model, these strategie
 - Backward Dynamic Programming
 - Reinforcement Learning
 
-## Context
-Model-Preditive-Control_Battery-Management-System \\
-├── classical-mpc \\
-├── dynamic-prog-and-rl \\
-├── stochastic-mpc \\
-├── utils-dynamics \\
+## Structure
+```
+Model-Preditive-Control_Battery-Management-System 
+├── classical-mpc
+├── dynamic-prog-and-rl 
+├── stochastic-mpc 
+├── utils-dynamics 
 └── results_btm
-
+```
 ## Results
+| Thermostat | Dynamic Programming |SMPC | SAC |
+|------------|---------------------|------|-----|
+| <img src="xresults_btm/thermostat_controller.png" width="200" alt="Thermostat Controller"><br>*Baseline controller* | <img src="xresults_btm/dp_controller.png" width="200" alt="DP Controller"><br>*Non-causal controller* |<img src="xresults_btm/smpc_controller.png" width="200" alt="SMPC Controller"><br>*Stochastic MPC* | <img src="xresults_btm/sac_h0_controller.png" width="200" alt="SAC Controller"><br>*Soft Actor-Critic* |
+

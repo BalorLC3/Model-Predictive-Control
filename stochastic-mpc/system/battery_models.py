@@ -2,7 +2,7 @@ import numpy as np
 import casadi as ca
 
 # ===============================================================
-# MÓDULO DE MODELOS DE BATERÍA (HÍBRIDO: SCIPY + CASADI)
+# MoDULO DE MODELOS DE BATERiA 
 # ===============================================================
 
 # --- PARÁMETROS GLOBALES ---
@@ -40,8 +40,7 @@ dvdt_grid = np.array([-5.05259901e-04, -3.86484957e-04, -1.83862780e-04, -1.4520
             -2.12468258e-05, -2.45634037e-05, -3.57568533e-05, -3.33730641e-05,
             -3.50313530e-05])
 
-# --- CREACIÓN DE INTERPOLADORES (GLOBAL - UNA SOLA VEZ) ---
-# Esto es crítico para la velocidad. No los crees dentro de las funciones.
+# --- CREACIÓN DE INTERPOLADORES ---
 
 # OCV Interpolants (Lista de listas)
 # 0: Charge Params Interpolants, 1: Discharge Params Interpolants
