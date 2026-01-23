@@ -4,6 +4,7 @@ from system.casadi_ode_solver import rk4_step_ca
 
 class SystemParameters:
     def __init__(self):
+        '''Initialize system parameters'''
         # --- Thermodynamics ---
         self.rho_rfg = 27.8
         self.rho_clnt = 1069.5
@@ -19,7 +20,7 @@ class SystemParameters:
         self.h_cout_kJ = 284.3
         self.h_evaout_kJ = 250.9
         
-        # --- Parámetros del Pack ---
+        # --- Battery pack parameters ---
         self.m_batt = 40.0       
         self.C_batt = 1350.0     
         self.N_series = 96.0       
@@ -27,13 +28,12 @@ class SystemParameters:
         
         self.m_clnt_total = 2.0 * self.rho_clnt / 1000
 
-# Los parámetros se pasan como objetos normales de Python durante la construcción del grafo.
-
 class BatteryThermalSystem:
     def __init__(self, initial_state, params):
+        '''Initialize the battery thermal system'''
         self.params = params
         
-        # En CasADi usamos numpy arrays estándar para el estado numérico
+        # In CasADi, is more efficient to use numpy arrays for state
         self.state = np.array([
             initial_state['T_batt'],
             initial_state['T_clnt'],
@@ -42,26 +42,26 @@ class BatteryThermalSystem:
         
         self.diagnostics = {}
         
-        # --- COMPILAR EL INTEGRADOR (Solo una vez) ---
-        # Esto crea una función C++ eficiente en memoria
+        # Compile an integrator
+        # This creates a CasADi function that can be called repeatedly 
         self._build_step_function()
 
     def _build_step_function(self):
         """
-        Construye el grafo simbólico de CasADi y crea una ca.Function.
+        Constructs the CasADi function for system dynamics integration.
         """
-        # 1. Definir variables simbólicas (Placeholders)
+        # Deine symbolic variables (Placeholders)
         x_sym = ca.MX.sym('x', 3)   # [T_batt, T_clnt, soc]
         u_sym = ca.MX.sym('u', 2)   # [w_comp, w_pump]
         d_sym = ca.MX.sym('d', 2)   # [P_driv, T_amb]
         dt_sym = ca.MX.sym('dt')    # Timestep
         
-        # 2. Llamar a la física (RK4) usando símbolos
-        # Aquí pasamos 'self.params' como objeto. Las constantes se "imprimen" en el grafo.
+        # Call the physics (RK4) using symbols
+        # Here we pass 'self.params' as an object. The constants are "printed" in the graph.
         x_next_sym, diag_sym = rk4_step_ca(x_sym, u_sym, d_sym, self.params, dt_sym)
         
-        # 3. Crear la Función Compilada
-        # Inputs: [Estado, Control, Perturbación, DT]
+        # Create the Compiled Function
+        # Inputs: [State, Control, Disturbance, DT]
         # Outputs: [Siguiente Estado, Diagnósticos]
         self.integrator_fn = ca.Function(
             'sys_step', 
@@ -75,18 +75,18 @@ class BatteryThermalSystem:
         """
         Avanza la simulación un paso usando el integrador CasADi compilado.
         """
-        # 1. Ejecutar la función compilada
-        # CasADi acepta listas o numpy arrays automáticamente
+        # 1. Execute the compiled function
+        # CasADi accepts lists or numpy arrays automatically
         res = self.integrator_fn(self.state, controls, disturbances, dt)
         
-        # 2. Extraer resultados (CasADi devuelve matrices DM, convertimos a numpy flatten)
-        # res[0] es x_next
-        # res[1] es diag
+        # 2. Extract results (CasADi returns DM matrices, convert to numpy flatten)
+        # res[0] is x_next
+        # res[1] is diag
         self.state = np.array(res[0]).flatten()
         diag_vec = np.array(res[1]).flatten()
         
-        # 3. Empaquetar diagnósticos para telemetría
-        # El orden debe coincidir con el retorno de 'battery_dynamics_ode_ca' en casadi_ode_solver.py
+        # Package diagnostics into a dictionary
+        # The order must match the return of 'battery_dynamics_ode_ca' in casadi_ode_solver.py
         # [P_cooling, P_batt_total, V_oc, I_batt, Q_gen, Q_cool, m_clnt_dot, T_chilled]
         self.diagnostics = {
             'P_cooling': diag_vec[0],
