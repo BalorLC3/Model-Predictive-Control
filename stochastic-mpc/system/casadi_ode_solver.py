@@ -1,7 +1,5 @@
 import casadi as ca
 import numpy as np
-
-# Importamos las versiones "híbridas" (CasADi-safe) que creamos antes
 from system.efficiency import (get_volumetric_eff, get_isentropic_eff, get_motor_eff,
                         get_pump_pressure_drop, PUMP_MAX_SPEED_RPM, COMP_MAX_SPEED_RPM)
 from system.battery_models import get_ocv, get_rbatt, get_cnom, get_dvdt
@@ -28,18 +26,17 @@ def battery_dynamics_ode_ca(state, controls, disturbances, params):
     eta_vol_pump = get_volumetric_eff(w_pump, PUMP_MAX_SPEED_RPM, 0.98)
     m_clnt_dot_calc = params.V_pump * (w_pump / 60.0) * eta_vol_pump * params.rho_clnt
     
-    # Soft Maximum para evitar discontinuidades abruptas en MPC (opcional pero recomendado)
-    # ca.fmax es el equivalente a jnp.maximum
+    # Soft Maximum to avoid negative flow rates
     m_clnt_dot = ca.fmax(m_clnt_dot_calc, 0.0)
 
     delta_p_pump = get_pump_pressure_drop(m_clnt_dot)
     eta_p_motor = get_motor_eff(w_pump)
     
     # Safe division using ca.if_else
-    # Si rho > 0 (que siempre es cierto en params), calculamos.
+    # if rho > 0 (which always is true in params), we calculate:
     P_pump_mech = (m_clnt_dot * delta_p_pump) / params.rho_clnt
     
-    # Protección contra división por cero en eficiencia
+    # Zero division safety
     P_pump_elec = P_pump_mech / ca.fmax(eta_p_motor, 0.01)
 
     eta_vol_comp = get_volumetric_eff(w_comp, COMP_MAX_SPEED_RPM, 0.95)
@@ -52,7 +49,7 @@ def battery_dynamics_ode_ca(state, controls, disturbances, params):
     P_comp_mech = (m_rfg_dot * h_delta_J) / ca.fmax(eta_isen, 0.01)
     P_comp_elec = P_comp_mech / ca.fmax(eta_c_motor, 0.01)
     
-    # Lógica de apagado estricto (para evitar consumo fantasma cuando w < 10)
+    # Shutdown logic for low speeds
     P_pump_elec = ca.if_else(w_pump < 10.0, 0.0, P_pump_elec)
     P_comp_elec = ca.if_else(w_comp < 10.0, 0.0, P_comp_elec)
     
@@ -82,15 +79,15 @@ def battery_dynamics_ode_ca(state, controls, disturbances, params):
     discriminant = V_oc_pack**2 - 4 * R_batt_pack * P_batt_total
     
     # Quadratic Logic
-    # ca.fmax(disc, 0) evita NaNs en la raíz cuadrada
+    # ca.fmax(discriminant, 0) for NaNs in sqrt
     sqrt_disc = ca.sqrt(ca.fmax(discriminant, 0.0))
     I_quadratic = (V_oc_pack - sqrt_disc) / (2 * R_batt_pack)
     I_linear = P_batt_total / V_oc_pack # Fallback simple
     
-    # Si disc >= 0 usamos cuadrática, sino lineal
+    # If disc >= 0 we use quadratic, if not lineal
     I_batt = ca.if_else(discriminant >= 0, I_quadratic, I_linear)
 
-    # Saturación de corriente (Clip)
+    # Current saturation (Clip)
     I_batt = ca.fmin(ca.fmax(I_batt, -I_max_charge), I_max_discharge)
     
     # SOC Limits (Logic)
@@ -179,5 +176,5 @@ def rk4_step_ca(state, controls, disturbances, params, dt):
     # Update
     next_state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
     
-    # Return next state AND diagnostics from the START of the step
+    # Return next state AND diagnostics from the INIT of the step
     return next_state, diag

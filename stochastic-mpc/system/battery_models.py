@@ -2,10 +2,10 @@ import numpy as np
 import casadi as ca
 
 # ===============================================================
-# MoDULO DE MODELOS DE BATERiA 
+# Battery Model Functions (CasADi Hybrid Versions)
 # ===============================================================
 
-# --- PARÁMETROS GLOBALES ---
+# --- GLOBAL PARAMETERS ---
 
 # OCV Data
 ocv_temperatures = np.array([5, 15, 25, 45])
@@ -22,13 +22,13 @@ ocv_params_discharge = np.array([
     [3.55,  -0.4573, 6.02e-5,  -6.241e-5,  -0.221],
 ])
 
-# Resistencia y Capacidad
+# Capacity & Resistance Data
 res_temperatures = np.array([5, 15, 25, 45])
 cnom_table = np.array([17.17, 19.24, 20.0, 21.6])
 r0_table = np.array([0.007, 0.0047, 0.003, 0.0019])
 r1_table = np.array([0.0042, 0.0018, 0.00065, 0.00054])
 
-# Calor Entrópico
+# Entropic Heat Coefficient Data
 soc_grid = np.array([-1.000e-04, 4.990e-02, 9.990e-02, 1.499e-01, 1.999e-01, 2.500e-01,
         3.000e-01, 3.500e-01, 4.000e-01, 4.500e-01, 5.000e-01, 5.500e-01,
         6.000e-01, 6.500e-01, 7.000e-01, 7.500e-01, 8.000e-01, 8.500e-01,
@@ -40,10 +40,8 @@ dvdt_grid = np.array([-5.05259901e-04, -3.86484957e-04, -1.83862780e-04, -1.4520
             -2.12468258e-05, -2.45634037e-05, -3.57568533e-05, -3.33730641e-05,
             -3.50313530e-05])
 
-# --- CREACIÓN DE INTERPOLADORES ---
 
-# OCV Interpolants (Lista de listas)
-# 0: Charge Params Interpolants, 1: Discharge Params Interpolants
+# Charge Params Interpolants, 1: Discharge Params Interpolants
 interp_ocv_charge = []
 interp_ocv_discharge = []
 
@@ -61,7 +59,6 @@ r1_interpolant = ca.interpolant('r1_int', 'linear', [res_temperatures], r1_table
 cnom_interpolant = ca.interpolant('cnom_int', 'linear', [res_temperatures], cnom_table)
 dvdt_interpolant = ca.interpolant('dvdt_int', 'linear', [soc_grid], dvdt_grid)
 
-# --- HELPER PARA HIBRIDACIÓN ---
 def _to_numeric_if_needed(val, input_ref):
     """
     Si la entrada (input_ref) es un número (float/int/numpy), convierte el resultado
@@ -74,7 +71,7 @@ def _to_numeric_if_needed(val, input_ref):
     return val
 
 # ===============================================================
-# --- FUNCIONES DEL MODELO ---
+# Model Functions
 # ===============================================================
 
 def get_ocv(soc, temp, mode='discharge'):
@@ -85,17 +82,17 @@ def get_ocv(soc, temp, mode='discharge'):
     else:
         interpolators = interp_ocv_discharge
         
-    # Obtener parámetros (devuelve DM si temp es float)
+    # Get parameters (yields DM if temp is float)
     p0 = interpolators[0](temp)
     p1 = interpolators[1](temp)
     p2 = interpolators[2](temp)
     a1 = interpolators[3](temp)
     a2 = interpolators[4](temp)
     
-    # Calcular OCV (Operaciones simbólicas o numéricas de CasADi)
+    # Calculate OCV
     ocv = p0 * ca.exp(a1 * soc_percent) + p1 * ca.exp(a2 * soc_percent) + p2 * soc_percent**2
     
-    # Convertir a float si estamos en simulación numérica
+    # Convert to float if we are in a numerical simulation
     return _to_numeric_if_needed(ocv, temp)
 
 

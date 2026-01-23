@@ -33,10 +33,10 @@ M_VEHICLE = 1850.0     # Vehicle mass [kg]
 G_ACCEL = 9.81         # Gravity acceleration [m/s^2]
 C_RR = 0.02            # Coefficient of rolling resistance (adimensional)
 RHO_AIR = 1.2          # Air density [kg/m^3]
-A_FRONTAL = 2.8        # Área frontal del vehículo [m^2]
-C_DRAG = 0.35          # Coeficiente de arrastre aerodinámico (adimensional)
-DRIVETRAIN_EFF = 0.80  # Eficiencia del tren motriz (motor + transmisión)
-REGEN_EFF = 0.65       # Eficiencia del frenado regenerativo
+A_FRONTAL = 2.8        # Frontal area of vehicle [m^2]
+C_DRAG = 0.35          # Rolling coefficient (adimensional)
+DRIVETRAIN_EFF = 0.80  # Efficiency of powertrain (motor + transmisión)
+REGEN_EFF = 0.65       # Efficiency of regenerative braking
 
 filename = 'driving_data/UDDS.txt'
 output_dir = Path.cwd() / filename
@@ -47,40 +47,38 @@ time_output_path = os.path.join(output_dir, 'driving_time.npy')
 
 def calculate_driving_power(v, a):
     """
-    Calcula la potencia eléctrica requerida por la batería (P_driv) para
-    una velocidad 'v' y aceleración 'a' dadas.
+    Calculates the electric potential required for the battery (P_driv) for
+    a velocity 'v' and acceleration 'a' given.
     
     Args:
-        v (float): Velocidad del vehículo [m/s].
-        a (float): Aceleración del vehículo [m/s^2].
+        v (float): Vehicle velocity [m/s].
+        a (float): Vehicle acceleration [m/s^2].
         
     Returns:
-        float: Potencia requerida [W]. Positiva para propulsión, negativa para regeneración.
+        float: Required power [W]. Positive for propulsión, negative for regeneration.
     """
-    # Fuerza de resistencia a la rodadura
+    # Rolling resistance force
     f_roll = M_VEHICLE * G_ACCEL * C_RR
     
-    # Fuerza de arrastre aerodinámico
+    # Aerodynamical rolling force
     f_aero = 0.5 * RHO_AIR * A_FRONTAL * C_DRAG * v**2
     
-    # Fuerza de inercia (para acelerar)
+    # Inertial force 
     f_accel = M_VEHICLE * a
     
-    # Potencia total requerida en las ruedas
+    # Total potency required in the wheels
     p_wheels = (f_roll + f_aero + f_accel) * v
-    
-    # Contabiliza las eficiencias del tren motriz
+
     if p_wheels >= 0:
-        # Propulsión: la batería debe entregar más potencia de la que llega a las ruedas
+        # Propulsion: battery must provide power to the wheels
         p_driv = p_wheels / DRIVETRAIN_EFF
     else:
-        # Frenado regenerativo: solo una parte de la energía de frenado vuelve a la batería
+        # Regenerative braking
         p_driv = p_wheels * REGEN_EFF
         
     return p_driv
 
 
-# --- 3. PROCESAMIENTO DEL ARCHIVO DEL CICLO DE CONDUCCIÓN ---
 
 try:
     df = pd.read_csv(filename, sep='\s+', skiprows=1, names=['time_s', 'speed_mph'])
@@ -88,18 +86,15 @@ except FileNotFoundError:
     print(f"Error: No se encontró el archivo del ciclo de conducción en {filename}")
     exit()
 
-# Conversión de unidades
 df['speed_mps'] = df['speed_mph'] * MPH_TO_MPS
 
 dt = df['time_s'].diff().iloc[1] 
 df['accel_mps2'] = df['speed_mps'].diff() / dt
-# Rellenar el primer valor NaN con 0
 df['accel_mps2'].fillna(0, inplace=True)
 
-# Aplicar la función de dinámica vehicular para calcular P_driv para cada fila
 df['P_driv_W'] = df.apply(lambda row: calculate_driving_power(row['speed_mps'], row['accel_mps2']), axis=1)
 
-# Extraer los perfiles como arrays de NumPy
+# Extract numpy arrays
 p_driv_profile = df['P_driv_W'].values
 velocity_profile = df['speed_mps'].values
 time_profile = df['time_s'].values
