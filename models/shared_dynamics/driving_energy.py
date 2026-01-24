@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from pathlib import Path
+import warnings
+warnings.filterwarnings("ignore")
 # ===============================================================
 # PREPROCESSING OF DRIVING FILES
 # ===============================================================
@@ -38,11 +40,15 @@ C_DRAG = 0.35          # Rolling coefficient (adimensional)
 DRIVETRAIN_EFF = 0.80  # Efficiency of powertrain (motor + transmisión)
 REGEN_EFF = 0.65       # Efficiency of regenerative braking
 
-filename = 'driving_data/UDDS.txt'
-output_dir = Path.cwd() / filename
-power_output_path = os.path.join(output_dir, 'driving_energy.npy')
-velocity_output_path = os.path.join(output_dir, 'driving_velocity.npy')
-time_output_path = os.path.join(output_dir, 'driving_time.npy')
+curr_dir = Path(__file__).parent.parent
+input_file = curr_dir / 'data' / 'driving_datasets' / 'UDDS.txt'
+
+output_dir = curr_dir / 'data' / 'processed'
+output_dir.mkdir(parents=True, exist_ok=True)
+
+power_output_path = output_dir / 'driving_energy.npy'
+velocity_output_path = output_dir / 'driving_velocity.npy'
+time_output_path = output_dir / 'driving_time.npy'
 
 
 def calculate_driving_power(v, a):
@@ -81,16 +87,16 @@ def calculate_driving_power(v, a):
 
 
 try:
-    df = pd.read_csv(filename, sep='\s+', skiprows=1, names=['time_s', 'speed_mph'])
+    df = pd.read_csv(input_file, sep='\s+', skiprows=2, names=['time_s', 'speed_mph'], dtype={'time_s': float, 'speed_mph': float})
 except FileNotFoundError:
-    print(f"Error: No se encontró el archivo del ciclo de conducción en {filename}")
+    print(f"Error: No se encontró el archivo del ciclo de conducción en {input_file}")
     exit()
 
 df['speed_mps'] = df['speed_mph'] * MPH_TO_MPS
 
 dt = df['time_s'].diff().iloc[1] 
 df['accel_mps2'] = df['speed_mps'].diff() / dt
-df['accel_mps2'].fillna(0, inplace=True)
+df.fillna({'accel_mps2': 0}, inplace=True)
 
 df['P_driv_W'] = df.apply(lambda row: calculate_driving_power(row['speed_mps'], row['accel_mps2']), axis=1)
 
@@ -137,5 +143,5 @@ print(f"Potencia máxima (propulsión): {p_driv_profile.max()/1000:.2f} kW")
 print(f"Potencia mínima (regeneración): {p_driv_profile.min()/1000:.2f} kW")
 print(f"Velocidad máxima: {velocity_profile.max():.2f} m/s ({velocity_profile.max()/MPH_TO_MPS:.2f} mph)")
 print(f"Velocidad mínima: {velocity_profile.min():.2f} m/s ({velocity_profile.min()/MPH_TO_MPS:.2f} mph)")
-print(f"Energía neta por ciclo: {np.trapz(p_driv_profile, dx=dt)/3600000:.4f} kWh")
-print(f"Energía total para dos ciclos: {np.trapz(p_driv_profile_duplicated, dx=dt)/3600000:.4f} kWh")
+print(f"Energía neta por ciclo: {np.trapezoid(p_driv_profile, dx=dt)/3600000:.4f} kWh")
+print(f"Energía total para dos ciclos: {np.trapezoid(p_driv_profile_duplicated, dx=dt)/3600000:.4f} kWh")
