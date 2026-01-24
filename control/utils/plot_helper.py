@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import os
 from pathlib import Path
 
-plt.rcParams.update({
+
+PLOT_CONFIG = {
     "text.usetex": False,
     "font.family": "sans-serif",
     "font.sans-serif": ["Microsoft YaHei"], # Change this to tex True & unicode to True
@@ -21,7 +21,17 @@ plt.rcParams.update({
     "grid.alpha": 0.25,
     "grid.linestyle": "--",
     "savefig.dpi": 300
-})
+}
+
+plt.rcParams.update(PLOT_CONFIG)
+
+def plot_signal(x, y, ylabel='', xlabel='Time (s)', color='b'):
+    plt.figure(figsize=(6, 4))
+    plt.plot(x, y, color=color, linewidth=1.5)
+    plt.ylabel(ylabel)
+    plt.xlabel(xlabel)
+    plt.grid(True)
+    plt.show()
     
 def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argument
     time = df_controller['time']
@@ -72,22 +82,63 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     axs[4].grid(True, which='both')
     axs[4].set_xlim(0, len(time))
     axs[4].set_ylim(0, 400)
-
+    
     save_dir = Path('results')    
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / f"{name}_controller.png", bbox_inches='tight', dpi=300)
     plt.show()
 
 def show_results(
-        df: pd.DataFrame,
-        controller_name: str
+        controller_name,
+        N, 
+        states_hist, 
+        ctrl_hist, 
+        diag_hist
     ):
-
+    df = pd.DataFrame({
+        'time': np.arange(N),
+        # Estados
+        'T_batt': states_hist[:, 0],
+        'T_clnt': states_hist[:, 1],
+        # Controles
+        'w_comp': ctrl_hist[:, 0],
+        'w_pump': ctrl_hist[:, 1],
+        # Diagnósticos 
+        'P_cooling': diag_hist[:, 0],
+        'Q_gen':     diag_hist[:, 4],
+        'Q_cool':    diag_hist[:, 5]
+    })
     print(f"Total Energy: {(df['P_cooling'].sum()/1000):.4f} kJ")
     print(f"Final T_batt: \n{df[['time','T_batt']].tail(3)}")
     
     plot_results(df, controller_name)
 
+def plot_learning_history(history):
+    episodes = np.arange(len(history['ep_rewards']))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 5), sharex=True)
+
+    ax1.plot(episodes, history['ep_energy_kj'], color='dodgerblue')
+    ax1.set_ylabel('Energia'+ '\n' + r'Consumida [kJ]')
+
+    ax2.plot(episodes, history['ep_avg_temp'], color='red')
+    ax2.set_ylabel(r'Promedio $T_{batt}$ [°C]')
+    plt.tight_layout()
+    plt.show()
+
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    ax.plot(episodes[5:], history['ep_rewards'][5:], color='seagreen')
+    ax.set_ylabel('Recompensa'+ '\n' + r'Cumulativa ($R$)')
+    ax.set_xlabel('Episodio')
+    ax.ticklabel_format(axis='y')
+    plt.tight_layout()
+    plt.show()
 
 
 
+
+        
+
+
+        

@@ -9,7 +9,7 @@ from control.casadi.system.sys_dynamics_casadi import BatteryThermalSystem, Syst
 from control.casadi.utils.setup import SimConfiguration, run_simulation
 from control.casadi.controllers.thermostat import Thermostat
 from control.casadi.controllers.mpc import DMPC, SMPC
-from control.casadi.utils.plot_funs import show_results
+from control.utils.plot_helper import show_results
 
 if __name__ == "__main__":
     try: 

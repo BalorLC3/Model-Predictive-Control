@@ -1,31 +1,16 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 from pathlib import Path
 import warnings
+from control.utils.plot_helper import PLOT_CONFIG
+
 warnings.filterwarnings("ignore")
 # ===============================================================
 # PREPROCESSING OF DRIVING FILES
 # ===============================================================
-plt.rcParams.update({
-    "text.usetex": False,
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Microsoft YaHei"], # Change this to tex True & unicode to True
-    "axes.labelsize": 12,
-    "xtick.labelsize": 11,
-    "ytick.labelsize": 11,
-    "axes.spines.top": True,
-    "axes.spines.right": True,
-    "axes.spines.left": True,
-    "axes.spines.bottom": True,
-    "figure.figsize": (6.0, 10.0),
-    "lines.linewidth": 1.4,
-    "axes.grid": True,
-    "grid.alpha": 0.25,
-    "grid.linestyle": "--",
-    "savefig.dpi": 300
-})
+PLOT_CONFIG['figure.figsize'] = (6.0, 10.0)
+plt.rcParams.update(PLOT_CONFIG)
 
 # Unit conversion
 MPH_TO_MPS = 0.44704   
