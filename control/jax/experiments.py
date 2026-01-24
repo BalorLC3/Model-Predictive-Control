@@ -9,7 +9,7 @@ from control.jax.controllers.thermostat import thermostat_logic_jax
 from control.jax.reinforcement_learning.sac import SBXActor
 from control.jax.utils.setup import run_simulation, load_driving_cycle
 from control.jax.utils.performance import time_total_simulation
-from control.jax.utils.plot_funs import show_results 
+from control.utils.plot_helper import show_results 
 from control.jax.env.env_batt import ObservationConfig
 import pickle
 
