@@ -1,10 +1,10 @@
 ## Battery Thermal Management System (BTMS)
 
-This repository provides a **research-grade simulation and benchmarking framework** for advanced control strategies applied to **battery thermal management systems (BTMS)** in electric vehicles.
+This repository provides a simulation and *benchmarking framework* for advanced control strategies applied to **battery thermal management systems (BTMS)** in electric vehicles.
 
-The framework is built around a **high‑fidelity lithium‑ion battery thermal model** and is designed to enable **fair, reproducible comparisons** between classical model‑based control methods and modern data‑driven approaches under identical operating conditions.
+The framework is built around a high‑fidelity lithium‑ion battery thermal model and is designed to enable **fair, reproducible comparisons** between classical model‑based control methods and modern data‑driven approaches under identical operating conditions.
 
-A central focus of this work is **Stochastic Model Predictive Control (SMPC)**, where exogenous disturbances are modeled as **random variables with known or estimated probability density functions** over a compact support. This allows uncertainty to be handled explicitly while maintaining constraint satisfaction with probabilistic guarantees.
+A central focus of this work is **Stochastic Model Predictive Control (SMPC)**, where exogenous disturbances are modeled as random variables with known or estimated probability density functions over a compact support. This allows uncertainty to be handled explicitly while maintaining constraint satisfaction with probabilistic guarantees.
 
 In contrast, **reinforcement learning (RL)** methods learn control policies directly from interaction with the environment, without requiring an explicit disturbance model, trading analytical guarantees for flexibility and scalability.
 
@@ -138,7 +138,7 @@ The **dynamic programming solution** serves as a non‑implementable lower bound
 ## Scope and Design Notes
 
 * This codebase is intended for **research and academic benchmarking**
-* CasADi and JAX versions are not unified by design
+* CasADi and JAX versions are not unified by design (mixing them is cumbersome and overcomplicated)
 * The emphasis is on **clarity, correctness, and reproducibility**, rather than deployment abstraction
 
 ---
