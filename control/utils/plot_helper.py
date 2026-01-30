@@ -100,7 +100,7 @@ def plot_results(df_controller: pd.DataFrame, name: str, config: str, dt=1.0): #
     axs[4].plot(time, energy_cooling_kJ, 'g')
     if config == 'vertical':
         axs[4].set_xlabel('Tiempo (s)')
-    label_plot(axs[4], r'Temperatura' + '\n' + r'($T$) [$^\circ$C]', config)
+    label_plot(axs[4], 'Energia de Enf.' + '\n' + r'($P_{cool}$) [kJ]', config)
     axs[4].grid(True, which='both')
     axs[4].set_xlim(0, len(time))
     axs[4].set_ylim(0, 400)

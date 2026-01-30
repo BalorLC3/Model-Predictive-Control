@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # ---------------------------------------------------------------
     # Setup
     # ---------------------------------------------------------------
-    controller_name = "thermostat"; horizon = 0
+    controller_name = "sac_h10"; horizon = 10
     dt = 1.0
 
     dist = load_driving_cycle()
