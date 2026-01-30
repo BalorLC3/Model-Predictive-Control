@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # ---------------------------------------------------------------
     # Setup
     # ---------------------------------------------------------------
-    controller_name = "sac_h10"; horizon = 10
+    controller_name = "thermostat"; horizon = 0
     dt = 1.0
 
     dist = load_driving_cycle()
@@ -123,7 +123,13 @@ if __name__ == "__main__":
     controls = np.asarray(history["controls"])
     diagnostics = np.asarray(history["diagnostics"])
 
-    show_results(controller_name, len(dist), states, controls, diagnostics)
+    show_results(
+        states_hist=states, 
+        ctrl_hist=controls, 
+        diag_hist=diagnostics, 
+        controller_name=controller_name, 
+        config='horizontal'
+    )
 
 
 

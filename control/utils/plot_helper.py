@@ -2,7 +2,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from pathlib import Path
-
+import jax.numpy as jnp
+from dataclasses import dataclass
 
 PLOT_CONFIG = {
     "text.usetex": False,
@@ -15,7 +16,6 @@ PLOT_CONFIG = {
     "axes.spines.right": True,
     "axes.spines.left": True,
     "axes.spines.bottom": True,
-    "figure.figsize": (4.0, 10.0), # TO paste in the Thesis is okay to use (4.0, 10.0), but (6.0, 10.0) is better for normal visualizaton
     "lines.linewidth": 1.4,
     "axes.grid": True,
     "grid.alpha": 0.25,
@@ -25,15 +25,33 @@ PLOT_CONFIG = {
 
 plt.rcParams.update(PLOT_CONFIG)
 
-def plot_signal(x, y, ylabel='', xlabel='Time (s)', color='b'):
-    plt.figure(figsize=(6, 4))
-    plt.plot(x, y, color=color, linewidth=1.5)
-    plt.ylabel(ylabel)
-    plt.xlabel(xlabel)
-    plt.grid(True)
-    plt.show()
+@dataclass
+class FigConfig:
+    vertical = {
+        "figsize": (4.0, 10.0),
+        "nrows": 5,
+        "ncols":1,
+        "sharex":True,
+        "layout":"constrained"
+    }
+    horizontal = {
+        "figsize":(13.0, 2.5),
+        "nrows": 1,
+        "ncols":5,
+        "layout":"constrained"
+    }
+
+def label_plot(ax, title: str, config: str):
+    if config == 'vertical':
+        ax.set_ylabel(title)
+    elif config == 'horizontal':
+        ax.set_title(title)
+        ax.set_xlabel('Tiempo (s)')
     
-def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argument
+def plot_results(df_controller: pd.DataFrame, name: str, config: str, dt=1.0): # Added dt argument
+
+    assert config == 'vertical' or 'horizontal', "Config must be horizontal or vertical, unless you want it diagonal" 
+
     time = df_controller['time']
     # Extract data
     Q_cool = df_controller['Q_cool']
@@ -44,30 +62,33 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     w_comp = df_controller['w_comp']
     P_cooling = df_controller['P_cooling']
 
-    fig, axs = plt.subplots(5, 1, sharex=True, layout='constrained')
-
+    if config == 'vertical':
+        fig, axs = plt.subplots(**FigConfig.vertical)
+    elif config == 'horizontal':
+        fig, axs = plt.subplots(**FigConfig.horizontal)
+    
     # --- 1. Heat Transfer ---
     axs[0].plot(time, Q_cool, 'b', lw=1.5)
-    axs[0].set_ylabel(r'Calor Removido' + '\n' + r'($\dot{Q}_{cool}$) [W]') 
+    label_plot(axs[0], r'Calor Removido' + '\n' + r'($\dot{Q}_{cool}$) [W]', config) 
     axs[0].set_xlim(0, len(time))
     axs[0].set_ylim(0, 2000)
     
     # --- 2. Pump Speed ---
     axs[1].plot(time, w_pump, 'r')
-    axs[1].set_ylabel(r'Vel. Bomba' + '\n' + r'($\omega_{pump}$) [RPM]')
+    label_plot(axs[1], r'Vel. Bomba' + '\n' + r'($\omega_{pump}$) [RPM]', config)
     axs[1].set_xlim(0, len(time))
     axs[1].set_ylim(0, 10000)
 
     # --- 3. Compressor Speed ---
     axs[2].plot(time, w_comp, 'k')
-    axs[2].set_ylabel(r'Vel. Compresor' + '\n' + r'($\omega_{comp}$) [RPM]')
+    label_plot(axs[2], r'Vel. Compresor' + '\n' + r'($\omega_{comp}$) [RPM]', config)
     axs[2].set_xlim(0, len(time))
     axs[2].set_ylim(0, 10000)
     
     # --- 4. Temperatures ---
-    axs[3].plot(time, T_batt, 'r', label='Bateria ($T_{batt}$)')
-    axs[3].plot(time, T_clnt, 'b--', label='Refrigerante ($T_{clnt}$)')
-    axs[3].set_ylabel(r'Temperatura' + '\n' + r'($T$) [$^\circ$C]')
+    axs[3].plot(time, T_batt, 'r', label='$T_{batt}$')
+    axs[3].plot(time, T_clnt, 'b--', label='$T_{clnt}$')
+    label_plot(axs[3], r'Temperatura' + '\n' + r'($T$) [$^\circ$C]', config)
     axs[3].legend(loc='upper left', frameon=True) 
     axs[3].set_xlim(0, len(time))
     axs[3].set_ylim(28, 35)
@@ -77,8 +98,9 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     energy_cooling_kJ = np.cumsum(P_cooling) * dt * joules_to_kJ
     
     axs[4].plot(time, energy_cooling_kJ, 'g')
-    axs[4].set_xlabel('Tiempo (s)')
-    axs[4].set_ylabel('Energia de Enf.' + '\n' + r'($P_{cool}$) [kJ]')
+    if config == 'vertical':
+        axs[4].set_xlabel('Tiempo (s)')
+    label_plot(axs[4], r'Temperatura' + '\n' + r'($T$) [$^\circ$C]', config)
     axs[4].grid(True, which='both')
     axs[4].set_xlim(0, len(time))
     axs[4].set_ylim(0, 400)
@@ -89,29 +111,35 @@ def plot_results(df_controller, name='thermostat', dt=1.0, ): # Added dt argumen
     plt.show()
 
 def show_results(
-        controller_name,
-        N, 
-        states_hist, 
-        ctrl_hist, 
-        diag_hist
+        states_hist: np.ndarray | jnp.ndarray = None, 
+        ctrl_hist: np.ndarray | jnp.ndarray = None, 
+        diag_hist: np.ndarray | jnp.ndarray = None,
+        controller_name = 'any',
+        df: pd.DataFrame = None,
+        config: str = 'vertical'
     ):
-    df = pd.DataFrame({
-        'time': np.arange(N),
-        # Estados
-        'T_batt': states_hist[:, 0],
-        'T_clnt': states_hist[:, 1],
-        # Controles
-        'w_comp': ctrl_hist[:, 0],
-        'w_pump': ctrl_hist[:, 1],
-        # Diagnósticos 
-        'P_cooling': diag_hist[:, 0],
-        'Q_gen':     diag_hist[:, 4],
-        'Q_cool':    diag_hist[:, 5]
-    })
+    if df is not None:
+        N = len(df)
+        df = df.copy()
+    else: 
+        N = len(states_hist)
+        df = pd.DataFrame({
+            'time': np.arange(N),
+            # Estados
+            'T_batt': states_hist[:, 0],
+            'T_clnt': states_hist[:, 1],
+            # Controles
+            'w_comp': ctrl_hist[:, 0],
+            'w_pump': ctrl_hist[:, 1],
+            # Diagnósticos 
+            'P_cooling': diag_hist[:, 0],
+            'Q_gen':     diag_hist[:, 4],
+            'Q_cool':    diag_hist[:, 5]
+        })
     print(f"Total Energy: {(df['P_cooling'].sum()/1000):.4f} kJ")
     print(f"Final T_batt: \n{df[['time','T_batt']].tail(3)}")
     
-    plot_results(df, controller_name)
+    plot_results(df, controller_name, config)
 
 def plot_learning_history(history):
     episodes = np.arange(len(history['ep_rewards']))
